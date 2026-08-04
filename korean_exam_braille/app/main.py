@@ -22,7 +22,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         "--mode",
         choices=("auto", "brf", "pdf"),
         default="auto",
-        help="auto: 확장자로 선택 (기본)",
+        help="auto: 확장자로 선택 (기본). 실행 중 보기 메뉴로 전환 가능",
     )
     return parser.parse_args(argv)
 
@@ -44,19 +44,13 @@ def main(argv: list[str] | None = None) -> int:
 
     app = QApplication(sys.argv if argv is None else [sys.argv[0], *sys.argv[1:]])
     app.setOrganizationName("korean-exam-braille")
+    app.setApplicationName(
+        "PDF Structure Viewer" if mode == "pdf" else "BRF Inspector"
+    )
 
-    if mode == "pdf":
-        app.setApplicationName("PDF Structure Viewer")
-        from korean_exam_braille.app.ui.pdf_viewer.window import PdfStructureWindow
+    from korean_exam_braille.app.ui.mode_switch import open_initial
 
-        window = PdfStructureWindow(initial_path=args.path)
-    else:
-        app.setApplicationName("BRF Inspector")
-        from korean_exam_braille.app.ui.brf_inspector.window import BrfInspectorWindow
-
-        window = BrfInspectorWindow(initial_path=args.path)
-
-    window.show()
+    open_initial(mode, args.path)
     return app.exec()
 
 

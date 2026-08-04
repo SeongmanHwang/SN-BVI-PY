@@ -54,13 +54,13 @@
 
 ## 현재 상태
 
-**Prototype 2 — PDF Structure Viewer** 까지 구현.
+**Prototype 3 — 지문 한 묶음 종단 변환** 1차 구현.
 
 | 프로토타입 | 상태 |
 |------------|------|
 | 1. BRF Inspector | 완료 — 무손실 로딩, 유니코드·역점역, 구조 태그 |
 | 2. PDF Structure Viewer | 완료 — 문자·행·블록 추출, 오버레이, 병합/분할, 저장 |
-| 3. 지문 한 묶음 종단 변환 | 예정 |
+| 3. 지문 한 묶음 종단 변환 | 1차 — `RuleExamStructureBuilder` + `TableBrailleTranslator` + `RuleBrailleLayoutEngine` |
 | 4. 시험 전체 변환 | 예정 |
 
 ### 설치
@@ -72,13 +72,21 @@ pip install -e ".[dev]"
 ### 실행
 
 ```bash
-# BRF Inspector
+# BRF Inspector / PDF Structure Viewer (실행 중 보기 메뉴·Ctrl+2로 전환)
 python -m korean_exam_braille.app.main path/to/file.brf
-python -m korean_exam_braille.app.main --mode brf
-
-# PDF Structure Viewer
 python -m korean_exam_braille.app.main path/to/file.pdf
-python -m korean_exam_braille.app.main --mode pdf path/to/file.pdf
+python -m korean_exam_braille.app.main --mode brf
+python -m korean_exam_braille.app.main --mode pdf
+```
+
+실행 중 **보기 → PDF Structure Viewer로 전환** / **BRF Inspector로 전환** (`Ctrl+2`)으로 모드를 바꿉니다. 파일 열기에서 상대 확장자를 고르면 자동 전환됩니다.
+
+PDF 뷰어에서 **BRF 변환 미리보기** (`Ctrl+Shift+B`)를 누르면 현재 구조로 파이프라인을 실행하고, 요약 대화상자 뒤 **BRF Inspector**에서 점자·묵자 역점역을 확인합니다.
+
+### 변환 파이프라인
+
+```bash
+python -c "from korean_exam_braille.app.pipeline import default_pipeline; r=default_pipeline().run('exam.pdf'); print(r.brf_text[:500]); print(r.warnings)"
 ```
 
 ### 테스트
@@ -113,7 +121,7 @@ python -m pytest
 
 1. **BRF Inspector** — BRF 분석·역점역·태깅 *(완료)*
 2. **PDF Structure Viewer** — 페이지 문자·행·블록 시각화 *(완료)*
-3. **지문 한 묶음 종단 변환** — 지문 1개 + 문항 2~3개 → BRF
+3. **지문 한 묶음 종단 변환** — 지문 1개 + 문항 2~3개 → BRF *(1차 완료)*
 4. **시험 전체 변환** — 45문항, 경고 목록, 기존 BRF 비교
 
 ---
@@ -153,17 +161,30 @@ python -m pytest
 korean_exam_braille/
 ├─ app/
 │  ├─ main.py                 # BRF / PDF 뷰어 진입점
+│  ├─ common/                 # 공통 태그·상수
 │  ├─ brf/                    # 파서·ASCII 점자·역점역·주석
-│  ├─ pdf/                    # 문자·행·블록 추출·후보·저장
+│  ├─ pdf/                    # 문자·행·블록 추출 (+ ports/adapter)
+│  ├─ exam/                   # 수능 의미 구조 (포트·스텁)
+│  ├─ braille/                # 점역 (포트·스텁)
+│  ├─ layout/                 # 줄·면 편집·BRF 직렬화 (포트·스텁)
+│  ├─ pipeline/               # PDF→Exam→Braille→Layout→BRF 오케스트레이션
 │  ├─ ui/brf_inspector/       # BRF Inspector
-│  ├─ ui/pdf_viewer/          # PDF Structure Viewer
-│  ├─ exam/ braille/          # (예정) 구조·점역
-│  └─ layout/ ml/             # (예정) 줄·면 편집·학습
-tests/
+│  └─ ui/pdf_viewer/          # PDF Structure Viewer
+tests/         # brf / pdf / pipeline
 data/          # raw PDF·BRF, annotations, fixtures
 docs/          # Phase 0 분석 노트
 profiles/      # 줄·면 편집 프로필
 rules/         # 구조·점역 규칙
+```
+
+변환 파이프라인은 단계 구현체를 주입해 교체한다.
+
+```python
+from korean_exam_braille.app.pipeline import default_pipeline, default_stub_pipeline
+
+result = default_pipeline().run("path/to/exam.pdf")
+# result.pdf / .exam / .sequences / .braille_document / .brf_text / .warnings
+# 격리·회귀용: default_stub_pipeline()
 ```
 
 분석 노트(`docs/`):
@@ -179,6 +200,7 @@ rules/         # 구조·점역 규칙
 
 ## 다음 작업
 
-1. 실제 평가원·교육청 PDF를 PDF Viewer로 열어 블록·읽기 순서 보정 (Phase 3–4)
-2. PDF–BRF 짝으로 `docs/` 규칙 정리 (Phase 0)
-3. 지문 한 묶음 종단 변환 (Prototype 3)
+1. 실제 PDF–BRF 짝으로 지문 한 묶음 셀 단위 비교·약자 정합 (Phase 8–9)
+2. 머리말·꼬리말·구분선 관례 반영
+3. 시험 전체 45문항 변환 (Prototype 4)
+4. Phase 0 `docs/` 규칙 노트 채우기

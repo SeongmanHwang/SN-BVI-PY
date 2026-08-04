@@ -8,6 +8,7 @@ from PySide6.QtCore import QRectF, Qt, Signal
 from PySide6.QtGui import QAction, QColor, QImage, QKeySequence, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QApplication,
     QCheckBox,
     QComboBox,
     QFileDialog,
@@ -35,6 +36,7 @@ from korean_exam_braille.app.pdf.extractor import extract_pdf, render_page_pixma
 from korean_exam_braille.app.pdf.io import save_structure
 from korean_exam_braille.app.pdf.models import PdfDocumentStructure, PdfPageStructure
 from korean_exam_braille.app.pdf.reading_order import assign_reading_order, move_block_order
+from korean_exam_braille.app.ui import mode_switch
 
 _TAG_COLORS = {
     "Question": QColor(220, 60, 60, 70),
@@ -197,6 +199,7 @@ class PdfStructureWindow(QMainWindow):
         self._keep_view_on_refresh = False
 
         self._build_actions()
+        self._build_menu()
         self._build_toolbar()
         self._build_ui()
         self.setStatusBar(QStatusBar())
@@ -205,7 +208,7 @@ class PdfStructureWindow(QMainWindow):
             self.open_path(Path(initial_path))
 
     def _build_actions(self) -> None:
-        self.act_open = QAction("PDF 열기…", self)
+        self.act_open = QAction("열기…", self)
         self.act_open.setShortcut(QKeySequence.Open)
         self.act_open.triggered.connect(self.open_file_dialog)
 
@@ -251,6 +254,33 @@ class PdfStructureWindow(QMainWindow):
         self.act_zoom_100.setShortcut(QKeySequence("Ctrl+1"))
         self.act_zoom_100.triggered.connect(self.zoom_reset)
 
+        self.act_switch_brf = QAction("BRF Inspector로 전환", self)
+        self.act_switch_brf.setShortcut(QKeySequence("Ctrl+2"))
+        self.act_switch_brf.triggered.connect(self.switch_to_brf_inspector)
+
+        self.act_preview_brf = QAction("BRF 변환 미리보기", self)
+        self.act_preview_brf.setShortcut(QKeySequence("Ctrl+Shift+B"))
+        self.act_preview_brf.triggered.connect(self.preview_brf_conversion)
+
+    def _build_menu(self) -> None:
+        menu_file = self.menuBar().addMenu("파일")
+        menu_file.addAction(self.act_open)
+        menu_file.addAction(self.act_save)
+        menu_file.addSeparator()
+        menu_file.addAction(self.act_preview_brf)
+
+        menu_view = self.menuBar().addMenu("보기")
+        menu_view.addAction(self.act_prev)
+        menu_view.addAction(self.act_next)
+        menu_view.addSeparator()
+        menu_view.addAction(self.act_zoom_out)
+        menu_view.addAction(self.act_zoom_in)
+        menu_view.addAction(self.act_zoom_fit)
+        menu_view.addAction(self.act_zoom_100)
+        menu_view.addSeparator()
+        menu_view.addAction(self.act_preview_brf)
+        menu_view.addAction(self.act_switch_brf)
+
     def _build_toolbar(self) -> None:
         bar = QToolBar("메인")
         bar.setMovable(False)
@@ -269,6 +299,8 @@ class PdfStructureWindow(QMainWindow):
             self.act_accept,
             self.act_reorder_up,
             self.act_reorder_down,
+            self.act_preview_brf,
+            self.act_switch_brf,
         ):
             bar.addAction(act)
             if act in (
@@ -277,6 +309,8 @@ class PdfStructureWindow(QMainWindow):
                 self.act_zoom_100,
                 self.act_split,
                 self.act_accept,
+                self.act_reorder_down,
+                self.act_preview_brf,
             ):
                 bar.addSeparator()
 
@@ -334,17 +368,61 @@ class PdfStructureWindow(QMainWindow):
         splitter.addWidget(right)
         splitter.setSizes([900, 500])
 
+    def switch_to_brf_inspector(self) -> None:
+        mode_switch.switch_to_brf(from_window=self)
+
+    def preview_brf_conversion(self) -> None:
+        """현재 PDF 구조로 파이프라인을 돌려 BRF Inspector에서 확인."""
+        if not self.document:
+            QMessageBox.information(self, "변환 미리보기", "먼저 PDF를 여세요.")
+            return
+        from korean_exam_braille.app.pipeline import default_pipeline
+
+        self.statusBar().showMessage("BRF 변환 중…")
+        QApplication.processEvents()
+        try:
+            result = default_pipeline().run_document(self.document)
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.critical(self, "변환 실패", str(exc))
+            self.statusBar().showMessage("변환 실패")
+            return
+
+        summary = _exam_summary(result.exam)
+        warn_text = "\n".join(f"· {w}" for w in result.warnings[:8]) or "(없음)"
+        more = ""
+        if len(result.warnings) > 8:
+            more = f"\n… 외 {len(result.warnings) - 8}건"
+        QMessageBox.information(
+            self,
+            "변환 요약",
+            f"{summary}\n\n경고:\n{warn_text}{more}\n\n"
+            "확인을 누르면 BRF Inspector에서 점자·역점역을 봅니다.",
+        )
+        src = self.pdf_path.name if self.pdf_path else "preview"
+        mode_switch.switch_to_brf(
+            from_window=self,
+            brf_text=result.brf_text,
+            path=f"{src}.preview.brf",
+            status_message=(
+                f"변환 미리보기 · {len(result.braille_document.pages)}면 · "
+                f"경고 {len(result.warnings)}건 · Ctrl+2로 PDF로 복귀"
+            ),
+        )
+
     def open_file_dialog(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
             self,
-            "PDF 열기",
+            "파일 열기",
             "",
-            "PDF files (*.pdf);;All files (*.*)",
+            "PDF / BRF (*.pdf *.PDF *.brf *.BRF);;PDF (*.pdf);;BRF (*.brf *.BRF);;All files (*.*)",
         )
         if path:
             self.open_path(Path(path))
 
     def open_path(self, path: Path) -> None:
+        if path.suffix.lower() in {".brf"}:
+            mode_switch.switch_to_brf(from_window=self, path=path)
+            return
         try:
             self.document = extract_pdf(path)
         except Exception as exc:  # noqa: BLE001
@@ -635,3 +713,32 @@ class PdfStructureWindow(QMainWindow):
         page.blocks = move_block_order(page.blocks, block.id, block.reading_order + delta)
         self.refresh_view()
         self.select_block(block.id)
+
+    def closeEvent(self, event) -> None:  # noqa: N802
+        if mode_switch.handle_close(self):
+            event.accept()
+        else:
+            event.ignore()
+
+
+def _exam_summary(exam) -> str:
+    groups = passages = questions = choices = 0
+
+    def walk(node) -> None:
+        nonlocal groups, passages, questions, choices
+        if node.node_type == "PassageGroup":
+            groups += 1
+        elif node.node_type == "Passage":
+            passages += 1
+        elif node.node_type == "Question":
+            questions += 1
+        elif node.node_type == "Choice":
+            choices += 1
+        for child in node.children:
+            walk(child)
+
+    walk(exam.root)
+    return (
+        f"PassageGroup {groups} · Passage {passages} · "
+        f"Question {questions} · Choice {choices}"
+    )

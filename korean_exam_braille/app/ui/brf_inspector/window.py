@@ -30,7 +30,8 @@ from korean_exam_braille.app.brf.annotations import (
     save_annotations,
 )
 from korean_exam_braille.app.brf.models import STRUCTURE_TAGS, BrfDocument, BrfLine
-from korean_exam_braille.app.brf.parser import save_brf
+from korean_exam_braille.app.brf.parser import parse_brf_text, save_brf
+from korean_exam_braille.app.ui import mode_switch
 
 
 class BrfInspectorWindow(QMainWindow):
@@ -44,6 +45,7 @@ class BrfInspectorWindow(QMainWindow):
         self._updating = False
 
         self._build_actions()
+        self._build_menu()
         self._build_toolbar()
         self._build_ui()
         self.setStatusBar(QStatusBar())
@@ -74,6 +76,22 @@ class BrfInspectorWindow(QMainWindow):
         self.act_accept_candidates = QAction("후보→태그 적용(현재 면)", self)
         self.act_accept_candidates.triggered.connect(self.accept_candidates_on_page)
 
+        self.act_switch_pdf = QAction("PDF Structure Viewer로 전환", self)
+        self.act_switch_pdf.setShortcut(QKeySequence("Ctrl+2"))
+        self.act_switch_pdf.triggered.connect(self.switch_to_pdf_viewer)
+
+    def _build_menu(self) -> None:
+        menu_file = self.menuBar().addMenu("파일")
+        menu_file.addAction(self.act_open)
+        menu_file.addAction(self.act_save_ann)
+        menu_file.addAction(self.act_save_brf)
+
+        menu_view = self.menuBar().addMenu("보기")
+        menu_view.addAction(self.act_prev)
+        menu_view.addAction(self.act_next)
+        menu_view.addSeparator()
+        menu_view.addAction(self.act_switch_pdf)
+
     def _build_toolbar(self) -> None:
         bar = QToolBar("메인")
         bar.setMovable(False)
@@ -86,6 +104,8 @@ class BrfInspectorWindow(QMainWindow):
         bar.addAction(self.act_next)
         bar.addSeparator()
         bar.addAction(self.act_accept_candidates)
+        bar.addSeparator()
+        bar.addAction(self.act_switch_pdf)
 
         bar.addWidget(QLabel("  점자 면: "))
         self.page_combo = QComboBox()
@@ -153,31 +173,58 @@ class BrfInspectorWindow(QMainWindow):
         v.addWidget(widget)
         return box
 
+    def switch_to_pdf_viewer(self) -> None:
+        mode_switch.switch_to_pdf(from_window=self)
+
     def open_file_dialog(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
             self,
-            "BRF 파일 열기",
+            "파일 열기",
             "",
-            "BRF files (*.brf *.BRF);;All files (*.*)",
+            "BRF / PDF (*.brf *.BRF *.pdf *.PDF);;BRF (*.brf *.BRF);;PDF (*.pdf);;All files (*.*)",
         )
         if path:
             self.open_path(Path(path))
 
     def open_path(self, path: Path) -> None:
+        if path.suffix.lower() == ".pdf":
+            mode_switch.switch_to_pdf(from_window=self, path=path)
+            return
         try:
             self.document = load_brf_with_annotations(path)
         except OSError as exc:
             QMessageBox.critical(self, "열기 실패", str(exc))
             return
-        self._current_page = 0
-        self._rebuild_page_combo()
-        self.show_page(0)
+        self._after_document_loaded(path)
+
+    def load_brf_text(
+        self,
+        text: str,
+        *,
+        source_path: str | None = None,
+    ) -> None:
+        """파이프라인 미리보기 등 메모리 BRF를 표시."""
+        self.document = parse_brf_text(text, source_path=source_path)
+        label = Path(source_path).name if source_path else "(변환 미리보기)"
+        self._after_document_loaded_message(
+            f"미리보기: {label} · {self.document.page_count}면 · "
+            f"{self.document.line_count}행"
+        )
+
+    def _after_document_loaded(self, path: Path) -> None:
         ann = annotation_path_for(path)
         extra = f" · 주석 {ann.name}" if ann.exists() else ""
-        self.statusBar().showMessage(
+        assert self.document is not None
+        self._after_document_loaded_message(
             f"열림: {path.name} · {self.document.page_count}면 · "
             f"{self.document.line_count}행{extra}"
         )
+
+    def _after_document_loaded_message(self, message: str) -> None:
+        self._current_page = 0
+        self._rebuild_page_combo()
+        self.show_page(0)
+        self.statusBar().showMessage(message)
 
     def save_current_annotations(self) -> None:
         if not self.document or not self.document.source_path:
@@ -340,3 +387,9 @@ class BrfInspectorWindow(QMainWindow):
             f"태그 {', '.join(line.tags) or '-'} · "
             f"후보 {', '.join(line.candidate_tags) or '-'}"
         )
+
+    def closeEvent(self, event) -> None:  # noqa: N802
+        if mode_switch.handle_close(self):
+            event.accept()
+        else:
+            event.ignore()

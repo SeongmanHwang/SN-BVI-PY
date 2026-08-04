@@ -3,28 +3,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from korean_exam_braille.app.common.tags import STRUCTURE_TAGS
 
-STRUCTURE_TAGS: tuple[str, ...] = (
-    "Exam",
-    "Instruction",
-    "PassageGroup",
-    "Passage",
-    "Paragraph",
-    "Question",
-    "Prompt",
-    "Choice",
-    "ExampleBox",
-    "Quotation",
-    "Footnote",
-    "TableDescription",
-    "FigureDescription",
-    "Header",
-    "Footer",
-    "Separator",
-    "PageBreak",
-    "EndNotice",
-    "Unknown",
-)
+__all__ = [
+    "STRUCTURE_TAGS",
+    "BrfLine",
+    "BrfPage",
+    "BrfDocument",
+]
 
 
 @dataclass
