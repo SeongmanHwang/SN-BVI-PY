@@ -1,0 +1,7 @@
+cells_per_line: 32
+lines_per_page: 26
+top_margin: 1
+bottom_margin: 1
+paragraph_indent: 2
+choice_indent: 2
+# 실제 값은 Phase 0 BRF 분석 후 확정
