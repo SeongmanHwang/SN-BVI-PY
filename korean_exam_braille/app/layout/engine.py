@@ -11,7 +11,7 @@ from korean_exam_braille.app.layout.models import (
     LayoutProfile,
 )
 
-_SEPARATOR = "=" * 28
+_SEPARATOR = "=gggggggggggggggggggggggggggggg="  # 국내 BRF 관례 (32셀)
 
 
 def _sequence_ascii(seq: BrailleSequence) -> str:

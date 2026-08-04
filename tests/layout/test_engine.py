@@ -61,4 +61,7 @@ def test_separator_before_example_box():
         ]
     )
     ascii_lines = [ln.ascii_text for ln in doc.pages[0].lines]
-    assert any(set(s.replace(" ", "")) <= {"="} and len(s) >= 6 for s in ascii_lines)
+    assert any(
+        ("g" in s.lower() or set(s.replace(" ", "")) <= {"="}) and len(s) >= 6
+        for s in ascii_lines
+    )

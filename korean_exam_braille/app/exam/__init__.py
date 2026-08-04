@@ -12,6 +12,7 @@ from korean_exam_braille.app.exam.stub import (
     StubExamStructureBuilder,
     StubExamStructureValidator,
 )
+from korean_exam_braille.app.exam.tree_text import format_exam_summary, format_exam_tree
 from korean_exam_braille.app.exam.validator import RuleExamStructureValidator
 
 __all__ = [
@@ -25,4 +26,6 @@ __all__ = [
     "StubExamStructureValidator",
     "RuleExamStructureBuilder",
     "RuleExamStructureValidator",
+    "format_exam_summary",
+    "format_exam_tree",
 ]

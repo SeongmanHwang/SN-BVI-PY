@@ -372,11 +372,14 @@ class PdfStructureWindow(QMainWindow):
         mode_switch.switch_to_brf(from_window=self)
 
     def preview_brf_conversion(self) -> None:
-        """현재 PDF 구조로 파이프라인을 돌려 BRF Inspector에서 확인."""
+        """현재 PDF 구조로 파이프라인을 돌려 트리·BRF를 확인."""
         if not self.document:
             QMessageBox.information(self, "변환 미리보기", "먼저 PDF를 여세요.")
             return
         from korean_exam_braille.app.pipeline import default_pipeline
+        from korean_exam_braille.app.ui.pdf_viewer.preview_dialog import (
+            ConversionPreviewDialog,
+        )
 
         self.statusBar().showMessage("BRF 변환 중…")
         QApplication.processEvents()
@@ -387,17 +390,11 @@ class PdfStructureWindow(QMainWindow):
             self.statusBar().showMessage("변환 실패")
             return
 
-        summary = _exam_summary(result.exam)
-        warn_text = "\n".join(f"· {w}" for w in result.warnings[:8]) or "(없음)"
-        more = ""
-        if len(result.warnings) > 8:
-            more = f"\n… 외 {len(result.warnings) - 8}건"
-        QMessageBox.information(
-            self,
-            "변환 요약",
-            f"{summary}\n\n경고:\n{warn_text}{more}\n\n"
-            "확인을 누르면 BRF Inspector에서 점자·역점역을 봅니다.",
-        )
+        dlg = ConversionPreviewDialog(self, result)
+        if dlg.exec() != dlg.DialogCode.Accepted:
+            self.statusBar().showMessage("변환 미리보기 취소")
+            return
+
         src = self.pdf_path.name if self.pdf_path else "preview"
         mode_switch.switch_to_brf(
             from_window=self,
@@ -719,26 +716,3 @@ class PdfStructureWindow(QMainWindow):
             event.accept()
         else:
             event.ignore()
-
-
-def _exam_summary(exam) -> str:
-    groups = passages = questions = choices = 0
-
-    def walk(node) -> None:
-        nonlocal groups, passages, questions, choices
-        if node.node_type == "PassageGroup":
-            groups += 1
-        elif node.node_type == "Passage":
-            passages += 1
-        elif node.node_type == "Question":
-            questions += 1
-        elif node.node_type == "Choice":
-            choices += 1
-        for child in node.children:
-            walk(child)
-
-    walk(exam.root)
-    return (
-        f"PassageGroup {groups} · Passage {passages} · "
-        f"Question {questions} · Choice {choices}"
-    )
