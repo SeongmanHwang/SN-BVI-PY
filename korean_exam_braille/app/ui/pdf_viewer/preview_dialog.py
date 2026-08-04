@@ -71,11 +71,14 @@ class ConversionPreviewDialog(QDialog):
         self.side.setPlainText(body)
 
         row = QHBoxLayout()
-        self.btn_compare = QPushButton("참고 BRF와 비교…")
+        self.btn_compare = QPushButton("참고 BRF와 줄 비교…")
         self.btn_compare.clicked.connect(self._compare_reference)
+        self.btn_exam_diff = QPushButton("참고 BRF와 내용 비교…")
+        self.btn_exam_diff.clicked.connect(self._exam_content_diff)
         self.btn_nav = QPushButton("계층 탐색기…")
         self.btn_nav.clicked.connect(self._open_navigator)
         row.addWidget(self.btn_compare)
+        row.addWidget(self.btn_exam_diff)
         row.addWidget(self.btn_nav)
         row.addStretch(1)
         right.addLayout(row)
@@ -124,6 +127,22 @@ class ConversionPreviewDialog(QDialog):
         text = self.side.toPlainText()
         text += "\n\n── 참고 BRF 비교 ──\n"
         text += cmp.summary(max_diffs=8)
+        self.side.setPlainText(text)
+
+    def _exam_content_diff(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "참고 BRF 선택 (시각장애용)",
+            "",
+            "BRF (*.brf *.BRF);;All files (*.*)",
+        )
+        if not path:
+            return
+        from korean_exam_braille.app.brf.exam_diff import compare_exam_content
+
+        report = compare_exam_content(self.result.brf_text, Path(path))
+        text = self.side.toPlainText()
+        text += "\n\n" + report.summary(max_items=10)
         self.side.setPlainText(text)
 
     def _open_navigator(self) -> None:

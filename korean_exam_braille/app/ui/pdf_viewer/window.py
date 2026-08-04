@@ -265,6 +265,10 @@ class PdfStructureWindow(QMainWindow):
         self.act_preview_brf.setShortcut(QKeySequence("Ctrl+Shift+B"))
         self.act_preview_brf.triggered.connect(self.preview_brf_conversion)
 
+        self.act_exam_diff = QAction("참고 BRF와 내용 비교…", self)
+        self.act_exam_diff.setShortcut(QKeySequence("Ctrl+Shift+D"))
+        self.act_exam_diff.triggered.connect(self.compare_exam_content_with_reference)
+
         self.act_navigate = QAction("계층 탐색", self)
         self.act_navigate.setShortcut(QKeySequence("Ctrl+3"))
         self.act_navigate.setCheckable(True)
@@ -276,6 +280,7 @@ class PdfStructureWindow(QMainWindow):
         menu_file.addAction(self.act_save)
         menu_file.addSeparator()
         menu_file.addAction(self.act_preview_brf)
+        menu_file.addAction(self.act_exam_diff)
         menu_file.addAction(self.act_navigate)
 
         menu_view = self.menuBar().addMenu("보기")
@@ -289,6 +294,7 @@ class PdfStructureWindow(QMainWindow):
         menu_view.addSeparator()
         menu_view.addAction(self.act_navigate)
         menu_view.addAction(self.act_preview_brf)
+        menu_view.addAction(self.act_exam_diff)
         menu_view.addAction(self.act_switch_brf)
 
     def _build_toolbar(self) -> None:
@@ -489,6 +495,52 @@ class PdfStructureWindow(QMainWindow):
                 f"변환 미리보기 · {len(result.braille_document.pages)}면 · "
                 f"경고 {len(result.warnings)}건 · Ctrl+2로 PDF로 복귀"
             ),
+        )
+
+    def compare_exam_content_with_reference(self) -> None:
+        """생성 BRF와 시각장애용 참고 BRF를 안내문 허용으로 내용 비교."""
+        if not self.document:
+            QMessageBox.information(self, "내용 비교", "먼저 PDF를 여세요.")
+            return
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "참고 BRF 선택 (시각장애용)",
+            "",
+            "BRF (*.brf *.BRF);;All files (*.*)",
+        )
+        if not path:
+            return
+
+        from PySide6.QtWidgets import QDialog, QDialogButtonBox, QPlainTextEdit
+
+        from korean_exam_braille.app.brf.exam_diff import compare_exam_content
+        from korean_exam_braille.app.pipeline import default_pipeline
+
+        self.statusBar().showMessage("변환·내용 비교 중…")
+        QApplication.processEvents()
+        try:
+            result = default_pipeline().run_document(self.document)
+            report = compare_exam_content(result.brf_text, Path(path))
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.critical(self, "내용 비교 실패", str(exc))
+            self.statusBar().showMessage("내용 비교 실패")
+            return
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle("시험 내용 비교 (안내문 허용)")
+        dlg.resize(720, 520)
+        lay = QVBoxLayout(dlg)
+        view = QPlainTextEdit()
+        view.setReadOnly(True)
+        view.setPlainText(report.summary(max_items=20))
+        lay.addWidget(view)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok)
+        buttons.accepted.connect(dlg.accept)
+        lay.addWidget(buttons)
+        dlg.exec()
+        self.statusBar().showMessage(
+            f"내용 비교 · 오류 후보 {len(report.content_mismatches)} · "
+            f"예상 차이 {len(report.expected_diffs)}"
         )
 
     def open_file_dialog(self) -> None:

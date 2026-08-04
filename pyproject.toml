@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "korean-exam-braille"
 version = "0.1.0"
-description = "수능 국어 PDF–BRF 자동 변환 (BRF Inspector 프로토타입)"
+description = "수능 국어 PDF→BRF 자동 변환 (참고 시각장애용 BRF 정합 목표)"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
