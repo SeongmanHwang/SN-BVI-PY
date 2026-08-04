@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from korean_exam_braille.app.braille.models import BrailleSequence, BrailleToken
 from korean_exam_braille.app.brf.ascii_braille import ascii_char_to_dots
 from korean_exam_braille.app.brf.korean_tables import (
@@ -25,11 +27,12 @@ from korean_exam_braille.app.brf.korean_tables import (
 )
 from korean_exam_braille.app.exam.models import ExamDocument, ExamNode
 
-# 묵자 → ASCII (표 반전)
+# 묵자 → ASCII (표 반전). 국내 BRF는 초성 ㄱ을 ` 로 씀.
 _CHO_TO_ASCII: dict[str, str] = {v: k for k, v in CHOSEONG.items()}
-# 된소리: ㄲ 등은 TENSED
+_CHO_TO_ASCII["ㄱ"] = "`"
 for _cell, _jamo in TENSED_MAP.items():
-    _CHO_TO_ASCII[_jamo] = TENSED_PREFIX + _cell
+    body = "`" if _cell == "@" else _cell
+    _CHO_TO_ASCII[_jamo] = TENSED_PREFIX + body
 
 _JUNG_TO_ASCII: dict[str, str] = {v: k for k, v in JUNGSEONG.items()}
 for _cells, _jamo in JUNGSEONG_DIGRAPHS.items():
@@ -39,15 +42,13 @@ _JONG_TO_ASCII: dict[str, str] = {v: k for k, v in JONGSEONG.items()}
 for _cells, _jamo in JONGSEONG_DIGRAPHS.items():
     _JONG_TO_ASCII[_jamo] = _cells
 
-# 가류 약자: (초성, 중성=ㅏ) → 셀. 전용 셀 우선 ($=가, l=사)
 _CV_ABBREV_BY_CHO: dict[str, str] = {}
 for _cell, (_cho, _jung) in ABBREV_CV.items():
     if _jung != "ㅏ":
         continue
-    # 전용 셀 우선
     if _cho not in _CV_ABBREV_BY_CHO or _cell in {"$", "l"}:
         if _cell == ",":
-            continue  # 사·초성 ㅅ과 충돌 — l 사용
+            continue
         _CV_ABBREV_BY_CHO[_cho] = _cell
 
 _VC_ABBREV: dict[tuple[str, str], str] = {
@@ -60,24 +61,30 @@ _PUNCT_TO_ASCII: dict[str, str] = {
     ".": "4",
     "!": "6",
     "?": "8",
-    ",": "1",  # ⠂ 간이
+    ",": "1",
     ":": "3",
-    ";": "23",  # fallback multi — handled specially if needed
     "-": "-",
     "(": "7",
     ")": "7",
     '"': "8",
     "'": "'",
+    "‘": "8",
+    "’": "0",
+    "“": "8",
+    "”": "0",
     "…": "444",
     "·": "1",
     "～": "-",
     "~": "-",
     "/": "/",
     "=": "=",
+    "〈": "7",
+    "〉": "7",
+    "<": "7",
+    ">": "7",
 }
 
-# 원문자 선택지 → 숫자 점역
-_CIRCLED = {
+_CIRCLED_DIGIT_CELL = {
     "①": "1",
     "②": "2",
     "③": "3",
@@ -93,6 +100,9 @@ _WORD_ABBREV_REV: list[tuple[str, str]] = sorted(
 _CHO_LIST = list(CHO_INDEX.keys())
 _JUNG_LIST = list(JUNG_INDEX.keys())
 _JONG_LIST = list(JONG_INDEX.keys())
+
+_PASSAGE_RANGE = re.compile(r"\[\s*(\d{1,2})\s*[~\-–—]\s*(\d{1,2})\s*\]")
+_QUESTION_START = re.compile(r"^(\d{1,2})\s*[\.．。]\s*")
 
 
 def decompose_hangul(ch: str) -> tuple[str, str, str] | None:
@@ -114,21 +124,33 @@ def _ascii_to_cells(ascii_text: str) -> list[int]:
             try:
                 cells.append(ascii_char_to_dots(ch))
             except ValueError:
-                # 미지원 문자는 공백 셀
                 cells.append(0)
     return cells
 
 
+def _num_braille(n: int | str) -> str:
+    s = str(n)
+    return NUMBER_SIGN + "".join(_DIGIT_TO_ASCII[d] for d in s)
+
+
+def _encode_passage_range(match: re.Match[str]) -> str:
+    """[1~3] → 82#a`9#c;0 (참고 BRF 관례)."""
+    a, b = int(match.group(1)), int(match.group(2))
+    return f"82{_num_braille(a)}`9{_num_braille(b)};0"
+
+
 def _encode_syllable(cho: str, jung: str, jong: str) -> str:
-    # 것
     if cho == "ㄱ" and jung == "ㅓ" and jong == "ㅅ":
         return ABBREV_GEOT
 
-    # ㅇ + VC 약자
     if cho == "ㅇ" and (jung, jong) in _VC_ABBREV:
         return _VC_ABBREV[(jung, jong)]
 
-    # 가류 약자 (ㅏ + 임의 종성)
+    if cho != "ㅇ" and (jung, jong) in _VC_ABBREV:
+        cho_ascii = _CHO_TO_ASCII.get(cho)
+        if cho_ascii:
+            return cho_ascii + _VC_ABBREV[(jung, jong)]
+
     if jung == "ㅏ" and cho in _CV_ABBREV_BY_CHO:
         base = _CV_ABBREV_BY_CHO[cho]
         if jong:
@@ -138,7 +160,6 @@ def _encode_syllable(cho: str, jung: str, jong: str) -> str:
             return base
         return base
 
-    # 일반: 초성(ㅇ 생략) + 중성 + 종성
     parts: list[str] = []
     if cho != "ㅇ":
         cho_ascii = _CHO_TO_ASCII.get(cho)
@@ -157,40 +178,61 @@ def _encode_syllable(cho: str, jung: str, jong: str) -> str:
     return "".join(parts)
 
 
+def _is_hangul(ch: str) -> bool:
+    return decompose_hangul(ch) is not None
+
+
 def hangul_text_to_ascii(text: str) -> str:
     """묵자 문자열 → Braille ASCII (개행 보존)."""
+    chunks: list[str] = []
+    for line in text.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
+        chunks.append(_encode_line(line))
+    return "\n".join(chunks)
+
+
+def _encode_line(line: str) -> str:
+    """지문 범위·문항 번호는 점자 ASCII로 직접 넣고, 나머지 묵자만 점역."""
+    parts: list[str] = []
+    cursor = 0
+
+    m_q = _QUESTION_START.match(line)
+    if m_q:
+        parts.append(_num_braille(int(m_q.group(1))) + "4 ")
+        cursor = m_q.end()
+
+    for m in _PASSAGE_RANGE.finditer(line, cursor):
+        parts.append(_hangul_body_to_ascii(line[cursor : m.start()]))
+        parts.append(_encode_passage_range(m))
+        cursor = m.end()
+
+    parts.append(_hangul_body_to_ascii(line[cursor:]))
+    return "".join(parts)
+
+
+def _hangul_body_to_ascii(text: str) -> str:
     out: list[str] = []
     i = 0
     n = len(text)
     while i < n:
         ch = text[i]
-        if ch in "\n\r":
-            out.append(ch)
-            i += 1
-            continue
-        if ch == " ":
-            out.append(" ")
-            i += 1
-            continue
-        if ch == "\t":
+
+        if ch in " \t":
             out.append(" ")
             i += 1
             continue
 
-        # 단어 약어
-        matched = False
+        matched_word = False
         for hangul, cells in _WORD_ABBREV_REV:
             if text.startswith(hangul, i):
                 out.append(cells)
                 i += len(hangul)
-                matched = True
+                matched_word = True
                 break
-        if matched:
+        if matched_word:
             continue
 
-        if ch in _CIRCLED:
-            digit = _CIRCLED[ch]
-            out.append(NUMBER_SIGN + _DIGIT_TO_ASCII[digit])
+        if ch in _CIRCLED_DIGIT_CELL:
+            out.append(NUMBER_SIGN + _CIRCLED_DIGIT_CELL[ch])
             i += 1
             continue
 
@@ -200,16 +242,20 @@ def hangul_text_to_ascii(text: str) -> str:
                 digits.append(_DIGIT_TO_ASCII[text[i]])
                 i += 1
             out.append(NUMBER_SIGN + "".join(digits))
+            # 숫자 뒤 자음 초성 한글만 띄움. 제N교시은 예외(참고: .n#a`+,o)
+            if i < n and _is_hangul(text[i]):
+                decomp = decompose_hangul(text[i])
+                if decomp and decomp[0] != "ㅇ" and not text.startswith(
+                    "교시", i
+                ):
+                    out.append(" ")
             continue
 
-        if "A" <= ch <= "Z" or "a" <= ch <= "z":
+        if ("A" <= ch <= "Z") or ("a" <= ch <= "z"):
             out.append(ROMAN_SIGN)
             while i < n and (("A" <= text[i] <= "Z") or ("a" <= text[i] <= "z")):
                 c = text[i]
-                if "A" <= c <= "Z":
-                    out.append("," + c.lower())
-                else:
-                    out.append(c)
+                out.append("," + c.lower() if "A" <= c <= "Z" else c)
                 i += 1
             continue
 
@@ -220,20 +266,15 @@ def hangul_text_to_ascii(text: str) -> str:
             continue
 
         if ch in _PUNCT_TO_ASCII:
-            punct = _PUNCT_TO_ASCII[ch]
-            # multi-char punct ascii
-            out.append(punct)
+            out.append(_PUNCT_TO_ASCII[ch])
             i += 1
             continue
 
-        # 한글 자모·기타: 건너뛰거나 ?
         if 0x3131 <= ord(ch) <= 0x318E:
             out.append("?")
             i += 1
             continue
 
-        # 미지원 문자 — 공백으로 대체하지 않고 생략 표시
-        out.append(" ")
         i += 1
 
     return "".join(out)
@@ -265,10 +306,70 @@ class TableBrailleTranslator:
 
     def translate_node(self, node: ExamNode) -> BrailleSequence:
         text = node.source_range.raw_text or ""
+        if node.node_type == "Header":
+            return self._translate_header(node)
+        if node.node_type == "Footer" and text.strip().isdigit():
+            # 쪽 번호만 있는 푸터는 본문 흐름에서 생략 (면 꼬리말은 후속)
+            return BrailleSequence(
+                source_node_id=node.id,
+                tokens=[],
+                metadata={
+                    "translator": "TableBrailleTranslator",
+                    "ascii": "",
+                    "node_type": node.node_type,
+                    "skipped": True,
+                },
+            )
         seq = self.translate_text(text)
         seq.source_node_id = node.id
         seq.metadata["node_type"] = node.node_type
         return seq
+
+    def _translate_header(self, node: ExamNode) -> BrailleSequence:
+        from korean_exam_braille.app.layout.header_format import (
+            pad_header_ascii,
+            split_header_ink_lines,
+        )
+
+        text = node.source_range.raw_text or ""
+        parts = split_header_ink_lines(text)
+        if not parts:
+            return BrailleSequence(
+                source_node_id=node.id,
+                tokens=[],
+                metadata={
+                    "translator": "TableBrailleTranslator",
+                    "ascii": "",
+                    "node_type": "Header",
+                    "skipped": True,
+                },
+            )
+        ascii_lines: list[str] = []
+        for align, ink in parts:
+            raw = hangul_text_to_ascii(ink)
+            ascii_lines.append(pad_header_ascii(align, raw))
+        flat = "\n".join(ascii_lines)
+        cell_list: list[int] = []
+        for line in flat.split("\n"):
+            cell_list.extend(_ascii_to_cells(line))
+        return BrailleSequence(
+            source_node_id=node.id,
+            tokens=[
+                BrailleToken(
+                    source_text=text,
+                    token_type="header",
+                    cells=cell_list,
+                    rule_id="table.header",
+                    metadata={"ascii": flat},
+                )
+            ],
+            metadata={
+                "translator": "TableBrailleTranslator",
+                "ascii": flat,
+                "node_type": "Header",
+                "preformatted": True,
+            },
+        )
 
     def translate_document(self, exam: ExamDocument) -> list[BrailleSequence]:
         sequences: list[BrailleSequence] = []
@@ -279,7 +380,9 @@ class TableBrailleTranslator:
                     walk(child)
                 return
             if node.source_range.raw_text:
-                sequences.append(self.translate_node(node))
+                seq = self.translate_node(node)
+                if not seq.metadata.get("skipped"):
+                    sequences.append(seq)
             for child in node.children:
                 walk(child)
 

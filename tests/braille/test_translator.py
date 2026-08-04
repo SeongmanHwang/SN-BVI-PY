@@ -15,8 +15,19 @@ def test_number_and_simple_syllables():
     assert "i" in ascii_text  # 다
 
 
+def test_haknyeondo_uses_vc_abbrev():
+    ascii_text = hangul_text_to_ascii("학년도")
+    assert "jac*iu" in ascii_text or "jac*" in ascii_text
+
+
+def test_passage_range_and_question_number():
+    ascii_text = hangul_text_to_ascii("[1~3] 다음")
+    assert ascii_text.startswith("82#a`9#c;0")
+    q = hangul_text_to_ascii("1. 물음")
+    assert q.startswith("#a4")
+
+
 def test_roundtrip_smoke_simple_words():
-    # 약자·자모가 대칭인 짧은 조각
     for src in ["가", "나", "다", "그리고", "하나"]:
         ascii_text = hangul_text_to_ascii(src)
         back = reverse_translate_line(ascii_text)
@@ -31,6 +42,6 @@ def test_translator_fills_cells():
     assert seq.metadata.get("ascii")
 
 
-def test_circled_choice_to_number():
+def test_circled_choice_to_hash_digit():
     ascii_text = hangul_text_to_ascii("① 선택")
-    assert ascii_text.startswith("#a")  # 1
+    assert ascii_text.startswith("#1")

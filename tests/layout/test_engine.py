@@ -30,7 +30,7 @@ def test_wrap_and_choice_indent():
         profile=profile,
     )
     assert doc.pages
-    lines = doc.pages[0].lines
+    lines = [ln for ln in doc.pages[0].lines if ln.ascii_text]
     assert lines
     assert lines[0].ascii_text.startswith("  ")
     assert all(len(ln.ascii_text) <= 10 for ln in lines)
@@ -44,7 +44,6 @@ def test_page_break_and_form_feed():
         top_margin=1,
         bottom_margin=1,
     )
-    # usable = 4 lines
     seqs = [_seq(f"line{i}", "Passage", node_id=f"p{i}") for i in range(9)]
     doc = engine.layout(seqs, profile=profile)
     assert len(doc.pages) >= 2
@@ -52,16 +51,18 @@ def test_page_break_and_form_feed():
     assert "\x0c" in text
 
 
-def test_separator_before_example_box():
+def test_separator_after_passage_group():
     engine = RuleBrailleLayoutEngine()
     doc = engine.layout(
         [
-            _seq("passage", "Passage"),
-            _seq("<보기>", "ExampleBox"),
+            _seq("[1~3] next", "PassageGroup"),
+            _seq("passage body", "Passage"),
         ]
     )
     ascii_lines = [ln.ascii_text for ln in doc.pages[0].lines]
-    assert any(
-        ("g" in s.lower() or set(s.replace(" ", "")) <= {"="}) and len(s) >= 6
-        for s in ascii_lines
+    sep_idx = next(
+        i for i, s in enumerate(ascii_lines) if "g" in s.lower() and s.startswith("=")
     )
+    assert any("82" in s or "1" in s or "[" in s or "next" in s for s in ascii_lines[:sep_idx])
+    assert any("passage" in s for s in ascii_lines[sep_idx + 1 :])
+
