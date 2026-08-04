@@ -176,12 +176,50 @@ WORD_ABBREV: dict[str, str] = {
     "a:": "그리하여",
 }
 
-# 숫자·영문
+# 숫자·영문·온표
 NUMBER_SIGN = "#"
 NUMBER_MAP = dict(zip("abcdefghij", "1234567890"))
 LETTER_SIGN = ";"  # 외국어표로도 쓰임 — 한글 ㅊ과 충돌, 숫자 뒤 등 문맥
-ROMAN_SIGN = "0"  # ⠴ — 종성 ㅎ과 충돌
+ROMAN_SIGN = "0"  # ⠴ — 종성 ㅎ·닫는따옴표와 충돌
 CAPITAL_SIGN = ","  # 영문 대문자표 — 된소리표와 충돌(영문 모드에서만)
+ON_SIGN = "="  # 온표 ⠿ — 옹(약자)과 동일 셀 → 문맥 구분
+
+# 복합 문장부호 (최장 일치용). ASCII 정규화 후 소문자·`→@ 기준.
+# 값: 묵자. 출처: 한국 점자 규정·Wikipedia Korean Braille punct.
+PUNCT_MULTI: dict[str, str] = {
+    ",8": "‘",  # 여는 작은따옴표 ⠠⠦
+    "0'": "’",  # 닫는 작은따옴표 ⠴⠄
+    ";8": "『",  # 여는 겹낫표/겹화살괄호 ⠰⠦
+    "02": "』",  # 닫는 겹낫표/겹화살괄호 ⠴⠆
+    '"8': "「",  # 여는 낫표/홑화살괄호 ⠐⠦
+    "01": "」",  # 닫는 낫표/홑화살괄호 ⠴⠂
+    "8'": "(",  # 여는 소괄호 ⠦⠄
+    ",0": ")",  # 닫는 소괄호 ⠠⠴
+    "82": "[",  # 여는 대괄호 (지문범위 82#… 와 구분: 뒤에 # 없으면 괄호)
+    ";0": "]",  # 닫는 대괄호
+    "1;": "·",  # 가운뎃점 ⠐⠆
+    "--": "–",  # 줄표
+    "88": "“",  # 여는 큰따옴표(겹) — 드묾
+    "00": "”",  # 닫는 큰따옴표(겹)
+    "99": "*",  # 별표/※ 계열 (각주)
+    "7c7": "ⓒ",  # 원문자 c (시험지 기호 관례)
+    ",-": "",  # 강조/밑줄 시작 (출력 생략)
+    "-'": "",  # 강조/밑줄 종료 (출력 생략)
+}
+
+# 1칸 문장부호 (종성·약자와 충돌하는 셀은 문맥에서만 사용)
+PUNCT_SINGLE: dict[str, str] = {
+    "4": ".",
+    "6": "!",
+    "8": "?",  # 물음표; 여는 큰따옴표 “ 와 동일 셀 → 문맥
+    "1": ",",
+    "-": "-",
+}
+
+# 닫는 부호로 쓰일 수 있어 종성으로 탐욕 결합하면 안 되는 접두
+CLOSING_PUNCT_PREFIXES: frozenset[str] = frozenset(
+    {",8", "0'", ";8", "02", '"8', "01", "00", "0"}
+)
 
 # 초성 / 약자 / 중성 / 종성 집합 (문맥 판별용)
 VOWEL_CELLS = frozenset(JUNGSEONG) | frozenset(x[0] for x in JUNGSEONG_DIGRAPHS)
@@ -189,6 +227,12 @@ FINAL_CELLS = frozenset(JONGSEONG)
 INITIAL_CELLS = frozenset(CHOSEONG)
 ABBREV_CV_CELLS = frozenset(ABBREV_CV)
 ABBREV_VC_CELLS = frozenset(ABBREV_VC)
+
+# 온표 뒤에 올 수 있는 단독 자모 셀 → 묵자 자모
+ON_SIGN_JAMO: dict[str, str] = {}
+ON_SIGN_JAMO.update(JUNGSEONG)
+ON_SIGN_JAMO.update(CHOSEONG)
+# 된소리는 온표+,+초성 으로 별도 처리
 
 CHO_INDEX = {
     "ㄱ": 0, "ㄲ": 1, "ㄴ": 2, "ㄷ": 3, "ㄸ": 4, "ㄹ": 5, "ㅁ": 6, "ㅂ": 7,

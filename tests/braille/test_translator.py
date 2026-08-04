@@ -42,6 +42,9 @@ def test_translator_fills_cells():
     assert seq.metadata.get("ascii")
 
 
-def test_circled_choice_to_hash_digit():
+def test_circled_choice_to_marked_digit():
     ascii_text = hangul_text_to_ascii("① 선택")
-    assert ascii_text.startswith("#1")
+    assert ascii_text.startswith("7#a7")
+    assert reverse_translate_line(ascii_text).startswith("①")
+    assert hangul_text_to_ascii("③").startswith("7#c7")
+    assert reverse_translate_line("7#e7") == "⑤"

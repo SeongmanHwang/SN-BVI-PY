@@ -64,20 +64,29 @@ _PUNCT_TO_ASCII: dict[str, str] = {
     ",": "1",
     ":": "3",
     "-": "-",
-    "(": "7",
-    ")": "7",
+    "(": "8'",
+    ")": ",0",
+    "[": "82",
+    "]": ";0",
     '"': "8",
     "'": "'",
-    "‘": "8",
-    "’": "0",
+    "‘": ",8",
+    "’": "0'",
     "“": "8",
     "”": "0",
+    "『": ";8",
+    "』": "02",
+    "「": '"8',
+    "」": "01",
     "…": "444",
-    "·": "1",
+    "·": "1;",
     "～": "-",
     "~": "-",
     "/": "/",
     "=": "=",
+    "*": "99",
+    "※": "99",
+    "ⓒ": "7c7",
     "〈": "7",
     "〉": "7",
     "<": "7",
@@ -85,11 +94,11 @@ _PUNCT_TO_ASCII: dict[str, str] = {
 }
 
 _CIRCLED_DIGIT_CELL = {
-    "①": "1",
-    "②": "2",
-    "③": "3",
-    "④": "4",
-    "⑤": "5",
+    "①": "a",
+    "②": "b",
+    "③": "c",
+    "④": "d",
+    "⑤": "e",
 }
 
 _WORD_ABBREV_REV: list[tuple[str, str]] = sorted(
@@ -232,7 +241,8 @@ def _hangul_body_to_ascii(text: str) -> str:
             continue
 
         if ch in _CIRCLED_DIGIT_CELL:
-            out.append(NUMBER_SIGN + _CIRCLED_DIGIT_CELL[ch])
+            # 원문자 번호: 7#a7 … (일반 수표 #a 와 구분)
+            out.append("7#" + _CIRCLED_DIGIT_CELL[ch] + "7")
             i += 1
             continue
 
@@ -253,10 +263,29 @@ def _hangul_body_to_ascii(text: str) -> str:
 
         if ("A" <= ch <= "Z") or ("a" <= ch <= "z"):
             out.append(ROMAN_SIGN)
-            while i < n and (("A" <= text[i] <= "Z") or ("a" <= text[i] <= "z")):
+            while i < n:
                 c = text[i]
-                out.append("," + c.lower() if "A" <= c <= "Z" else c)
-                i += 1
+                if ("A" <= c <= "Z") or ("a" <= c <= "z"):
+                    out.append("," + c.lower() if "A" <= c <= "Z" else c)
+                    i += 1
+                    continue
+                if c == " " and i + 1 < n and (
+                    ("A" <= text[i + 1] <= "Z") or ("a" <= text[i + 1] <= "z")
+                ):
+                    out.append(" ")
+                    i += 1
+                    continue
+                if c in "()" and c in _PUNCT_TO_ASCII:
+                    out.append(_PUNCT_TO_ASCII[c])
+                    i += 1
+                    continue
+                if c == "," and i + 1 < n and (
+                    ("A" <= text[i + 1] <= "Z") or ("a" <= text[i + 1] <= "z")
+                ):
+                    out.append(_PUNCT_TO_ASCII[","])
+                    i += 1
+                    continue
+                break
             continue
 
         decomp = decompose_hangul(ch)
