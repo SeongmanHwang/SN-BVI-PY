@@ -73,7 +73,10 @@ class ConversionPreviewDialog(QDialog):
         row = QHBoxLayout()
         self.btn_compare = QPushButton("참고 BRF와 비교…")
         self.btn_compare.clicked.connect(self._compare_reference)
+        self.btn_nav = QPushButton("계층 탐색기…")
+        self.btn_nav.clicked.connect(self._open_navigator)
         row.addWidget(self.btn_compare)
+        row.addWidget(self.btn_nav)
         row.addStretch(1)
         right.addLayout(row)
 
@@ -122,3 +125,8 @@ class ConversionPreviewDialog(QDialog):
         text += "\n\n── 참고 BRF 비교 ──\n"
         text += cmp.summary(max_diffs=8)
         self.side.setPlainText(text)
+
+    def _open_navigator(self) -> None:
+        from korean_exam_braille.app.ui.nav.dialog import NavigatorDialog
+
+        NavigatorDialog(self, self.result.exam).exec()

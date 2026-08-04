@@ -83,6 +83,9 @@ python -m korean_exam_braille.app.main --mode pdf
 
 PDF 뷰어에서 **BRF 변환 미리보기** (`Ctrl+Shift+B`)를 누르면 현재 구조로 파이프라인을 실행하고, 요약 대화상자 뒤 **BRF Inspector**에서 점자·묵자 역점역을 확인합니다.
 
+**계층 탐색** (`Ctrl+3`)은 PDF 창 **오른쪽 도킹 패널**로 Exam 트리를 보여 줍니다.  
+`Alt+←→↑↓`로 계층 이동, `Ctrl+←→`로 문항 이동. 위치는 상태바와 PDF 블록 선택에 반영됩니다.
+
 ### 변환 파이프라인
 
 ```bash
@@ -164,27 +167,31 @@ korean_exam_braille/
 │  ├─ common/                 # 공통 태그·상수
 │  ├─ brf/                    # 파서·ASCII 점자·역점역·주석
 │  ├─ pdf/                    # 문자·행·블록 추출 (+ ports/adapter)
-│  ├─ exam/                   # 수능 의미 구조 (포트·스텁)
-│  ├─ braille/                # 점역 (포트·스텁)
-│  ├─ layout/                 # 줄·면 편집·BRF 직렬화 (포트·스텁)
-│  ├─ pipeline/               # PDF→Exam→Braille→Layout→BRF 오케스트레이션
-│  ├─ ui/brf_inspector/       # BRF Inspector
-│  └─ ui/pdf_viewer/          # PDF Structure Viewer
-tests/         # brf / pdf / pipeline
+│  ├─ exam/                   # 수능 의미 구조 (포트·규칙 빌더)
+│  ├─ braille/                # 점역 (포트·표 기반)
+│  ├─ layout/                 # 줄·면 편집·BRF 직렬화
+│  ├─ nav/                    # 계층 탐색 (포트·트리 내비게이터)
+│  ├─ pipeline/               # PDF→Exam→Braille→Layout→BRF
+│  ├─ ui/brf_inspector/
+│  ├─ ui/pdf_viewer/
+│  └─ ui/nav/                 # 탐색 패널·대화상자
+tests/         # brf / pdf / exam / braille / layout / nav / pipeline
 data/          # raw PDF·BRF, annotations, fixtures
 docs/          # Phase 0 분석 노트
 profiles/      # 줄·면 편집 프로필
 rules/         # 구조·점역 규칙
 ```
 
-변환 파이프라인은 단계 구현체를 주입해 교체한다.
+변환·탐색은 단계 구현체를 주입해 교체한다.
 
 ```python
-from korean_exam_braille.app.pipeline import default_pipeline, default_stub_pipeline
+from korean_exam_braille.app.pipeline import default_pipeline
+from korean_exam_braille.app.nav import TreeExamNavigator
 
 result = default_pipeline().run("path/to/exam.pdf")
-# result.pdf / .exam / .sequences / .braille_document / .brf_text / .warnings
-# 격리·회귀용: default_stub_pipeline()
+nav = TreeExamNavigator()
+nav.bind(result.exam)
+nav.next_of_type("Question")
 ```
 
 분석 노트(`docs/`):
@@ -200,17 +207,18 @@ result = default_pipeline().run("path/to/exam.pdf")
 
 ## 다음 작업
 
-1. 머리말 줄바꿈·가운데 정렬·쪽번호 관례를 참고 BRF에 더 맞추기
-2. 선택지 `#1`…`#5` 뒤 본문 약자·문장부호 정합률 올리기
+1. 본문 점역 정합 (참고 BRF 셀 일치율)
+2. 탐색 ↔ BRF 면/줄 동기화 (layout `source_node_ids`)
 3. 시험 전체 45문항 변환 (Prototype 4)
 4. Phase 0 `docs/` 규칙 노트 채우기
 
-### 품질 루프 (현재)
+### 품질·탐색 루프
 
 1. PDF 열기 → 블록·순서 보정  
-2. **BRF 변환 미리보기** — Exam 트리·relations 확인  
-3. (선택) **참고 BRF와 비교** — 앞 몇 면 셀/행 차이  
-4. BRF Inspector에서 점자·역점역 확인 후 다시 보정
+2. **계층 탐색** (`Ctrl+3`) — 도킹 트리 + Alt/Ctrl 단축키 · PDF 블록 연동  
+3. **BRF 변환 미리보기** — Exam 트리·참고 BRF 비교  
+4. BRF Inspector에서 점자·역점역 확인  
 
 점역·레이아웃 1차 반영: `[N~M]`, 문항번호, 선택지, VC약자, 구분선,  
-**머리말 줄 분리·가운데 정렬**(1면 헤더가 참고와 동일 구조).
+**머리말 줄 분리·가운데 정렬**(1면 헤더가 참고와 동일 구조).  
+탐색은 `nav/` 포트로 분리되어 점역과 독립적으로 교체한다.

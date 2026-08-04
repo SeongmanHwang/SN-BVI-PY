@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
     QComboBox,
+    QDockWidget,
     QFileDialog,
     QGraphicsPixmapItem,
     QGraphicsRectItem,
@@ -197,11 +198,13 @@ class PdfStructureWindow(QMainWindow):
         self._selected_block_id: str | None = None
         self._updating = False
         self._keep_view_on_refresh = False
+        self._nav_shortcuts_installed = False
 
         self._build_actions()
         self._build_menu()
         self._build_toolbar()
         self._build_ui()
+        self._build_nav_dock()
         self.setStatusBar(QStatusBar())
 
         if initial_path:
@@ -262,12 +265,18 @@ class PdfStructureWindow(QMainWindow):
         self.act_preview_brf.setShortcut(QKeySequence("Ctrl+Shift+B"))
         self.act_preview_brf.triggered.connect(self.preview_brf_conversion)
 
+        self.act_navigate = QAction("계층 탐색", self)
+        self.act_navigate.setShortcut(QKeySequence("Ctrl+3"))
+        self.act_navigate.setCheckable(True)
+        self.act_navigate.triggered.connect(self.toggle_hierarchy_navigator)
+
     def _build_menu(self) -> None:
         menu_file = self.menuBar().addMenu("파일")
         menu_file.addAction(self.act_open)
         menu_file.addAction(self.act_save)
         menu_file.addSeparator()
         menu_file.addAction(self.act_preview_brf)
+        menu_file.addAction(self.act_navigate)
 
         menu_view = self.menuBar().addMenu("보기")
         menu_view.addAction(self.act_prev)
@@ -278,6 +287,7 @@ class PdfStructureWindow(QMainWindow):
         menu_view.addAction(self.act_zoom_fit)
         menu_view.addAction(self.act_zoom_100)
         menu_view.addSeparator()
+        menu_view.addAction(self.act_navigate)
         menu_view.addAction(self.act_preview_brf)
         menu_view.addAction(self.act_switch_brf)
 
@@ -300,6 +310,7 @@ class PdfStructureWindow(QMainWindow):
             self.act_reorder_up,
             self.act_reorder_down,
             self.act_preview_brf,
+            self.act_navigate,
             self.act_switch_brf,
         ):
             bar.addAction(act)
@@ -311,6 +322,7 @@ class PdfStructureWindow(QMainWindow):
                 self.act_accept,
                 self.act_reorder_down,
                 self.act_preview_brf,
+                self.act_navigate,
             ):
                 bar.addSeparator()
 
@@ -368,8 +380,81 @@ class PdfStructureWindow(QMainWindow):
         splitter.addWidget(right)
         splitter.setSizes([900, 500])
 
+    def _build_nav_dock(self) -> None:
+        from korean_exam_braille.app.ui.nav.panel import NavSidePanel
+
+        self.nav_panel = NavSidePanel()
+        self.nav_panel.locationChanged.connect(self._on_nav_location)
+        self.nav_dock = QDockWidget("계층 탐색", self)
+        self.nav_dock.setObjectName("HierarchyNavDock")
+        self.nav_dock.setWidget(self.nav_panel)
+        self.nav_dock.setAllowedAreas(
+            Qt.DockWidgetArea.LeftDockWidgetArea
+            | Qt.DockWidgetArea.RightDockWidgetArea
+        )
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.nav_dock)
+        self.nav_dock.hide()
+        self.nav_dock.visibilityChanged.connect(self._on_nav_dock_visibility)
+
     def switch_to_brf_inspector(self) -> None:
         mode_switch.switch_to_brf(from_window=self)
+
+    def toggle_hierarchy_navigator(self, checked: bool | None = None) -> None:
+        """도킹 패널로 Exam 트리 탐색 (점역 불필요)."""
+        if checked is None:
+            checked = not self.nav_dock.isVisible()
+        if checked and not self.document:
+            self.act_navigate.setChecked(False)
+            QMessageBox.information(self, "계층 탐색", "먼저 PDF를 여세요.")
+            return
+        if checked:
+            self._ensure_nav_bound()
+            self.nav_dock.show()
+            self.nav_dock.raise_()
+            self.nav_panel.tree.setFocus(Qt.FocusReason.ShortcutFocusReason)
+        else:
+            self.nav_dock.hide()
+        self.act_navigate.setChecked(self.nav_dock.isVisible())
+
+    def open_hierarchy_navigator(self) -> None:
+        """하위 호환: 패널 표시."""
+        self.toggle_hierarchy_navigator(True)
+
+    def _on_nav_dock_visibility(self, visible: bool) -> None:
+        self.act_navigate.setChecked(visible)
+        if visible and self.document:
+            self._ensure_nav_bound()
+
+    def _ensure_nav_bound(self) -> None:
+        if not self.document:
+            self.nav_panel.clear()
+            return
+        from korean_exam_braille.app.exam.builder import RuleExamStructureBuilder
+        from korean_exam_braille.app.nav import TreeExamNavigator
+
+        exam = RuleExamStructureBuilder().build(self.document)
+        nav = TreeExamNavigator()
+        self.nav_panel.bind(nav, exam)
+        if not self._nav_shortcuts_installed:
+            self.nav_panel.install_window_shortcuts(self)
+            self._nav_shortcuts_installed = True
+
+    def _on_nav_location(self, loc) -> None:
+        """탐색 위치 → PDF 블록 선택 (어댑터)."""
+        from korean_exam_braille.app.ui.nav.panel import format_location_status
+
+        if loc is None:
+            return
+        page = loc.metadata.get("page_number")
+        block_ids = loc.metadata.get("block_ids") or []
+        if page is not None and self.document:
+            try:
+                self.show_page(int(page))
+            except Exception:  # noqa: BLE001
+                pass
+        if block_ids:
+            self.select_block(str(block_ids[0]), from_nav=True)
+        self.statusBar().showMessage(format_location_status(loc))
 
     def preview_brf_conversion(self) -> None:
         """현재 PDF 구조로 파이프라인을 돌려 트리·BRF를 확인."""
@@ -437,6 +522,10 @@ class PdfStructureWindow(QMainWindow):
             f"열림: {path.name} · {self.document.page_count}면 · "
             f"추출 {len(self.document.pages)}면{extra}"
         )
+        if self.nav_dock.isVisible():
+            self._ensure_nav_bound()
+        else:
+            self.nav_panel.clear()
 
     def save_structure(self) -> None:
         if not self.document or not self.pdf_path:
@@ -559,7 +648,7 @@ class PdfStructureWindow(QMainWindow):
                     ids.append(str(bid))
         return ids
 
-    def select_block(self, block_id: str) -> None:
+    def select_block(self, block_id: str, *, from_nav: bool = False) -> None:
         self._selected_block_id = block_id
         page = self.current_page()
         if not page:
@@ -580,6 +669,23 @@ class PdfStructureWindow(QMainWindow):
                 f"{block.text}"
             )
         self._draw_overlays(page)
+        if not from_nav:
+            self._sync_nav_from_block(block_id)
+
+    def _sync_nav_from_block(self, block_id: str) -> None:
+        """PDF/테이블 선택 → 계층 탐색 패널 (역연동)."""
+        if not getattr(self, "nav_dock", None) or not self.nav_dock.isVisible():
+            return
+        nav = self.nav_panel.navigator()
+        if nav is None:
+            return
+        loc = nav.go_by_block_id(block_id)
+        if loc is None:
+            return
+        self.nav_panel.refresh(emit=False)
+        from korean_exam_braille.app.ui.nav.panel import format_location_status
+
+        self.statusBar().showMessage(format_location_status(loc))
 
     def _draw_overlays(self, page: PdfPageStructure) -> None:
         boxes: list[tuple[str, tuple[float, float, float, float], list[str], int]] = []
