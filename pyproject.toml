@@ -12,6 +12,7 @@ dependencies = [
     "PySide6>=6.6",
     "pydantic>=2.0",
     "PyYAML>=6.0",
+    "PyMuPDF>=1.24",
 ]
 
 [project.optional-dependencies]
@@ -19,13 +20,14 @@ dev = [
     "pytest>=8.0",
 ]
 pdf = [
-    "PyMuPDF>=1.24",
     "pdfplumber>=0.11",
     "Pillow>=10.0",
 ]
 
 [project.scripts]
 brf-inspector = "korean_exam_braille.app.main:main"
+pdf-viewer = "korean_exam_braille.app.main:main_pdf"
+korean-exam-braille = "korean_exam_braille.app.main:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
