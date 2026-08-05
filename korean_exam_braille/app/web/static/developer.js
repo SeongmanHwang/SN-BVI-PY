@@ -10,16 +10,25 @@
   const pdfCacheEl = document.getElementById("pdf-cache");
   const pdfImgA = document.getElementById("pdf-img-a");
   const pdfImgB = document.getElementById("pdf-img-b");
+  const pdfOverlayB = document.getElementById("pdf-overlay-b");
+  const highlightStatus = document.getElementById("highlight-status");
+  const examTreeEl = document.getElementById("exam-tree");
+  const btnExpandAll = document.getElementById("btn-expand-all");
+  const btnCollapseAll = document.getElementById("btn-collapse-all");
 
   /** @type {{
-   *   pdfPages: Array<{page_number:number, text:string}>,
-   *   braillePages: Array<{index:number, unicode:string, reverse:string}>,
+   *   pdfPages: Array<object>,
+   *   braillePages: Array<object>,
    *   pageIndex: number,
+   *   examTree: object|null,
+   *   selectedNodeId: string|null,
+   *   highlightBlockIds: string[],
    *   status: object|null,
    *   warnings: Array<string>,
    * } | null} */
   let cache = null;
   let mode = "a";
+  const DEFAULT_EXPAND_DEPTH = 1;
 
   function setStatus(message, { focus = false } = {}) {
     alertEl.hidden = true;
@@ -42,6 +51,10 @@
     panelsB.hidden = isA;
     panelsA.setAttribute("aria-hidden", isA ? "false" : "true");
     panelsB.setAttribute("aria-hidden", isA ? "true" : "false");
+    if (!isA) {
+      // 모드 B로 올 때 오버레이 크기 재맞춤
+      requestAnimationFrame(paintOverlay);
+    }
   }
 
   function fillPageSelect(pdfPages, selectedIndex) {
@@ -56,29 +69,88 @@
     pageSelect.disabled = pdfPages.length === 0;
   }
 
+  function setExpanded(li, expanded) {
+    const children = li.querySelector(":scope > ul");
+    if (!children) return;
+    li.setAttribute("aria-expanded", expanded ? "true" : "false");
+    children.hidden = !expanded;
+    const toggle = li.querySelector(":scope > .node-row .node-toggle");
+    if (toggle) {
+      toggle.textContent = expanded ? "▼" : "▶";
+      toggle.setAttribute(
+        "aria-label",
+        expanded ? "하위 항목 접기" : "하위 항목 펼치기"
+      );
+    }
+  }
+
+  function expandAll(expanded) {
+    examTreeEl.querySelectorAll('li[role="treeitem"]').forEach((li) => {
+      if (li.querySelector(":scope > ul")) setExpanded(li, expanded);
+    });
+  }
+
   function renderTree(container, node) {
     container.innerHTML = "";
     if (!node) return;
 
-    function makeNested(children) {
+    function makeNested(children, depth) {
       const ul = document.createElement("ul");
       ul.setAttribute("role", "group");
       children.forEach((child) => {
         const li = document.createElement("li");
         li.setAttribute("role", "treeitem");
+        li.dataset.nodeId = child.id || "";
+        if (child.page_number != null) {
+          li.dataset.pageNumber = String(child.page_number);
+        }
+        if (child.block_ids && child.block_ids.length) {
+          li.dataset.blockIds = child.block_ids.join(",");
+        }
+
+        const row = document.createElement("div");
+        row.className = "node-row";
+
+        const hasChildren = !!(child.children && child.children.length);
+        if (hasChildren) {
+          const toggle = document.createElement("button");
+          toggle.type = "button";
+          toggle.className = "node-toggle";
+          toggle.textContent = "▼";
+          toggle.addEventListener("click", (event) => {
+            event.stopPropagation();
+            const open = li.getAttribute("aria-expanded") !== "true";
+            setExpanded(li, open);
+          });
+          row.appendChild(toggle);
+        } else {
+          const spacer = document.createElement("span");
+          spacer.className = "node-toggle-spacer";
+          spacer.setAttribute("aria-hidden", "true");
+          row.appendChild(spacer);
+        }
+
+        const selectBtn = document.createElement("button");
+        selectBtn.type = "button";
+        selectBtn.className = "node-select";
         const label = document.createElement("span");
         label.className = "node-label";
         label.textContent = child.label || child.type;
-        li.appendChild(label);
+        selectBtn.appendChild(label);
         if (child.text) {
-          const text = document.createElement("div");
+          const text = document.createElement("span");
           text.className = "node-text";
           text.textContent = child.text;
-          li.appendChild(text);
+          selectBtn.appendChild(text);
         }
-        if (child.children && child.children.length) {
-          li.setAttribute("aria-expanded", "true");
-          li.appendChild(makeNested(child.children));
+        selectBtn.addEventListener("click", () => selectTreeNode(child, li));
+        row.appendChild(selectBtn);
+        li.appendChild(row);
+
+        if (hasChildren) {
+          const childUl = makeNested(child.children, depth + 1);
+          li.appendChild(childUl);
+          setExpanded(li, depth < DEFAULT_EXPAND_DEPTH);
         }
         ul.appendChild(li);
       });
@@ -87,7 +159,74 @@
 
     const roots =
       node.children && node.children.length ? node.children : [node];
-    container.appendChild(makeNested(roots));
+    container.appendChild(makeNested(roots, 0));
+  }
+
+  function clearTreeSelection() {
+    examTreeEl
+      .querySelectorAll(".node-select.is-selected")
+      .forEach((el) => el.classList.remove("is-selected"));
+  }
+
+  function selectTreeNode(node, li) {
+    if (!cache) return;
+    clearTreeSelection();
+    const btn = li.querySelector(":scope > .node-row .node-select");
+    if (btn) btn.classList.add("is-selected");
+
+    cache.selectedNodeId = node.id || null;
+    cache.highlightBlockIds = Array.isArray(node.block_ids)
+      ? node.block_ids.slice()
+      : [];
+
+    const pageNumber = node.page_number;
+    if (pageNumber != null) {
+      const idx = cache.pdfPages.findIndex((p) => p.page_number === pageNumber);
+      if (idx >= 0 && idx !== cache.pageIndex) {
+        showLinkedPage(idx);
+      } else {
+        paintOverlay();
+      }
+    } else {
+      paintOverlay();
+    }
+
+    const label = node.label || node.type || "노드";
+    if (cache.highlightBlockIds.length) {
+      highlightStatus.textContent = `선택: ${label} · 블록 ${cache.highlightBlockIds.length}개 강조`;
+    } else {
+      highlightStatus.textContent = `선택: ${label} · 연결 블록 없음`;
+    }
+  }
+
+  function paintOverlay() {
+    if (!pdfOverlayB || !cache) return;
+    const pdf = cache.pdfPages[cache.pageIndex];
+    pdfOverlayB.innerHTML = "";
+    if (!pdf) return;
+
+    const width = Number(pdf.width) || 1;
+    const height = Number(pdf.height) || 1;
+    pdfOverlayB.setAttribute("viewBox", `0 0 ${width} ${height}`);
+    pdfOverlayB.setAttribute("width", "100%");
+    pdfOverlayB.setAttribute("height", "100%");
+
+    const ids = new Set(cache.highlightBlockIds || []);
+    if (!ids.size) return;
+
+    const blocks = pdf.blocks || [];
+    blocks.forEach((block) => {
+      if (!ids.has(block.id)) return;
+      const [x0, y0, x1, y1] = block.bbox || [];
+      if ([x0, y0, x1, y1].some((v) => typeof v !== "number")) return;
+      const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+      rect.setAttribute("x", String(x0));
+      rect.setAttribute("y", String(y0));
+      rect.setAttribute("width", String(Math.max(0, x1 - x0)));
+      rect.setAttribute("height", String(Math.max(0, y1 - y0)));
+      rect.setAttribute("class", "pdf-highlight");
+      pdfOverlayB.appendChild(rect);
+    });
   }
 
   function pdfUrl(pageNumber) {
@@ -121,6 +260,13 @@
         "(이 면에 대응하는 점자 없음)";
       document.getElementById("reverse-text").textContent =
         "(이 면에 대응하는 역점역 없음)";
+    }
+
+    // 이미지 로드 후 오버레이 맞춤
+    if (pdfImgB.complete) {
+      paintOverlay();
+    } else {
+      pdfImgB.addEventListener("load", () => paintOverlay(), { once: true });
     }
   }
 
@@ -180,20 +326,23 @@
         pdfPages,
         braillePages,
         pageIndex: startIndex,
+        examTree: data.exam_tree || null,
+        selectedNodeId: null,
+        highlightBlockIds: [],
         status: data.status || null,
         warnings: data.warnings || [],
       };
 
       fillPageSelect(pdfPages, startIndex);
+      highlightStatus.textContent = "";
 
       document.getElementById("exam-tree-text").textContent =
         data.exam_tree_text || "";
       document.getElementById("dtbook-xml").textContent = data.dtbook_xml || "";
       const tree = data.exam_tree || {};
       document.getElementById("tree-summary").textContent = tree.summary || "";
-      renderTree(document.getElementById("exam-tree"), tree.root);
+      renderTree(examTreeEl, tree.root);
 
-      // 먼저 현재 면을 그린 뒤, 나머지는 백그라운드 프리로드
       showLinkedPage(startIndex);
       updateStatusLine();
       prefetchPdfImages(pdfPages).catch(() => {});
@@ -246,6 +395,7 @@
           document.body.classList.remove("is-resizing");
           window.removeEventListener("pointermove", onMove);
           window.removeEventListener("pointerup", onUp);
+          paintOverlay();
         }
 
         window.addEventListener("pointermove", onMove);
@@ -266,6 +416,7 @@
         let nextRight = rightStart - delta;
         if (nextLeft < MIN || nextRight < MIN) return;
         applyWidths(nextLeft, nextRight);
+        paintOverlay();
       });
     });
   }
@@ -275,8 +426,19 @@
   btnReload.addEventListener("click", () => loadBundle());
   pageSelect.addEventListener("change", () => {
     const n = Number(pageSelect.value);
-    if (!Number.isNaN(n)) showLinkedPage(n);
+    if (!Number.isNaN(n)) {
+      if (cache) {
+        cache.highlightBlockIds = [];
+        cache.selectedNodeId = null;
+        clearTreeSelection();
+        highlightStatus.textContent = "";
+      }
+      showLinkedPage(n);
+    }
   });
+  btnExpandAll.addEventListener("click", () => expandAll(true));
+  btnCollapseAll.addEventListener("click", () => expandAll(false));
+  window.addEventListener("resize", () => paintOverlay());
 
   initSplitters(panelsA);
   initSplitters(panelsB);

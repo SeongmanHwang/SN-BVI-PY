@@ -166,8 +166,26 @@ class ConversionWorkspace:
         exam = self.exam_document()
         return format_exam_summary(exam) + "\n\n" + format_exam_tree(exam)
 
+    def pdf_page_payload(self, page_number: int) -> dict[str, object]:
+        """면 텍스트·크기·블록 bbox (하이라이트용)."""
+        page = self.service.get_page(page_number)
+        blocks = sorted(page.blocks, key=lambda b: b.reading_order)
+        return {
+            "page_number": page_number,
+            "text": "\n\n".join(b.text.strip() for b in blocks if b.text.strip()),
+            "width": page.width,
+            "height": page.height,
+            "blocks": [
+                {
+                    "id": b.id,
+                    "bbox": [b.bbox[0], b.bbox[1], b.bbox[2], b.bbox[3]],
+                }
+                for b in blocks
+            ],
+        }
+
     def exam_tree_nodes(self) -> dict[str, object]:
-        """접근성 트리용 JSON."""
+        """접근성 트리용 JSON (PDF 연동 메타 포함)."""
 
         def walk(node) -> dict[str, object]:
             raw = (node.source_range.raw_text or "").replace("\n", " ").strip()
@@ -182,6 +200,8 @@ class ConversionWorkspace:
                 "type": node.node_type,
                 "label": label,
                 "text": raw,
+                "page_number": node.source_range.page_number,
+                "block_ids": list(node.source_range.block_ids),
                 "children": [walk(c) for c in node.children],
             }
 
@@ -198,9 +218,7 @@ class ConversionWorkspace:
         self.ensure_converted()
         pages = self.pdf_page_numbers()
         page = page_number if page_number in pages else (pages[0] if pages else 1)
-        pdf_pages = [
-            {"page_number": n, "text": self.pdf_page_text(n)} for n in pages
-        ]
+        pdf_pages = [self.pdf_page_payload(n) for n in pages]
         braille_pages = self.braille_pages_view()
         return {
             "status": self.status_snapshot(),

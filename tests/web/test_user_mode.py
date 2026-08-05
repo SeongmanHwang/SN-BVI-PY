@@ -81,6 +81,11 @@ def test_developer_bundle_and_page(client, tiny_pdf_bytes: bytes):
     assert "reverse" in data["braille_pages"][0]
     assert "brf_text" not in data
     assert data["page_numbers"]
+    page0 = data["pdf_pages"][0]
+    assert "blocks" in page0
+    assert "width" in page0 and "height" in page0
+    root = data["exam_tree"]["root"]
+    assert "block_ids" in root or "children" in root
 
     page = data["page_number"]
     png = client.get(f"/api/dev/pdf-page/{page}")
