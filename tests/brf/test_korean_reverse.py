@@ -37,7 +37,10 @@ def test_period_not_final_pieup():
 
 def test_separator_preserved():
     line = "=gggggggggggggggggggggggggggggg="
-    assert reverse_translate_line(line) == line
+    assert reverse_translate_line(line) == "─" * 16
+    line7 = "=" + "7" * 28 + "="
+    assert reverse_translate_line(line7) == "─" * 16
+    assert "옹" not in reverse_translate_line(line7)
 
 
 def test_numbers_and_latin():

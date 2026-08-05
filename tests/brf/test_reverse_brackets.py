@@ -16,6 +16,16 @@ def test_circled_digits():
     for ink, cell in zip("①②③④⑤", "abcde"):
         assert r(f"7#{cell}7") == ink
         assert hangul_text_to_ascii(ink) == f"7#{cell}7"
+    # 참고 시험지: ⠼⠂…⠼⠢
+    for ink, cell in zip("①②③④⑤", "12345"):
+        assert r(f"#{cell}") == ink
+
+
+def test_choice_item_mark_stripped():
+    hangul = hangul_text_to_ascii("한글")
+    assert r("#1_0 " + hangul) == "① 한글"
+    assert r("#2_0" + hangul) == "② 한글"
+    assert "_<" not in r("#3_0 " + hangul)
 
 
 def test_student_in_quotes_after_bracket():

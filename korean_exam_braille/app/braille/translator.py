@@ -12,6 +12,7 @@ from korean_exam_braille.app.brf.korean_tables import (
     ABBREV_VC,
     CHO_INDEX,
     CHOSEONG,
+    JAMO_COMPAT_TO_ASCII,
     JONG_INDEX,
     JONGSEONG,
     JONGSEONG_DIGRAPHS,
@@ -68,29 +69,38 @@ _PUNCT_TO_ASCII: dict[str, str] = {
     ")": ",0",
     "[": "82",
     "]": ";0",
-    '"': "8",
+    "{": "81",
+    "}": '"0',
+    '"': "88",
     "'": "'",
     "‘": ",8",
     "’": "0'",
-    "“": "8",
-    "”": "0",
+    "“": "88",
+    "”": "00",
     "『": ";8",
     "』": "02",
     "「": '"8',
     "」": "01",
+    "《": ";88",
+    "》": "002",
+    "【": "82",
+    "】": ";0",
+    "〈": "78",
+    "〉": "07",
+    "<": "78",
+    ">": "07",
     "…": "444",
     "·": "1;",
-    "～": "-",
-    "~": "-",
+    "～": "@9",
+    "~": "@9",
+    "―": "--",
+    "—": "--",
+    "–": "--",
     "/": "/",
     "=": "=",
     "*": "99",
     "※": "99",
     "ⓒ": "7c7",
-    "〈": "7",
-    "〉": "7",
-    "<": "7",
-    ">": "7",
 }
 
 _CIRCLED_DIGIT_CELL = {
@@ -252,13 +262,8 @@ def _hangul_body_to_ascii(text: str) -> str:
                 digits.append(_DIGIT_TO_ASCII[text[i]])
                 i += 1
             out.append(NUMBER_SIGN + "".join(digits))
-            # 숫자 뒤 자음 초성 한글만 띄움. 제N교시은 예외(참고: .n#a`+,o)
-            if i < n and _is_hangul(text[i]):
-                decomp = decompose_hangul(text[i])
-                if decomp and decomp[0] != "ㅇ" and not text.startswith(
-                    "교시", i
-                ):
-                    out.append(" ")
+            # 수표 구간은 a–j 만 소비하므로 뒤 한글과 붙어도 역점역에 문제 없음.
+            # ([3점] → 82#c.s5;0, 공백 삽입 시 '3 점'으로 어색)
             continue
 
         if ("A" <= ch <= "Z") or ("a" <= ch <= "z"):
@@ -290,7 +295,24 @@ def _hangul_body_to_ascii(text: str) -> str:
 
         decomp = decompose_hangul(ch)
         if decomp is not None:
-            out.append(_encode_syllable(*decomp))
+            cho, jung, jong = decomp
+            # 가류 약자 직후가 ㅇ-시작 음절(음, 였, 을…)이면 ㅏ를 명시해
+            # 자음→즘, 하였 모호성을 줄인다: 자음=.<[5, 하였=j<:/
+            next_de = decompose_hangul(text[i + 1]) if i + 1 < n else None
+            if (
+                jung == "ㅏ"
+                and not jong
+                and cho in _CV_ABBREV_BY_CHO
+                and next_de is not None
+                and next_de[0] == "ㅇ"
+            ):
+                cho_ascii = _CHO_TO_ASCII.get(cho)
+                if cho_ascii is not None:
+                    out.append(cho_ascii + "<")
+                else:
+                    out.append(_encode_syllable(cho, jung, jong))
+            else:
+                out.append(_encode_syllable(*decomp))
             i += 1
             continue
 
@@ -299,8 +321,15 @@ def _hangul_body_to_ascii(text: str) -> str:
             i += 1
             continue
 
+        # 호환 자모(ㄱ, ㅏ, ㅣ …) — 온표 + 자모 점형
+        if ch in JAMO_COMPAT_TO_ASCII:
+            out.append(JAMO_COMPAT_TO_ASCII[ch])
+            i += 1
+            continue
+
         if 0x3131 <= ord(ch) <= 0x318E:
-            out.append("?")
+            # 표에 없는 호환 자모는 온표만 남기지 않고 명시적으로 표시
+            out.append("=?")
             i += 1
             continue
 

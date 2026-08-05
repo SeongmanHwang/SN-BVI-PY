@@ -50,8 +50,11 @@ def test_legacy_hyphen_parens_in_roman():
 
 
 def test_asterisk_and_circled_c():
-    assert r("h=`v399 ^o+7") == "통관* 비용" or "*" in r("99")
-    assert r("99") == "*"
-    assert r("7c7") == "ⓒ"
+    assert r("99") == "※"
+    assert hangul_text_to_ascii("*") in ("99", "*")
     assert hangul_text_to_ascii("통관* 비용").find("99") >= 0
+    assert "※" in r(hangul_text_to_ascii("통관* 비용")) or "*" in r(
+        hangul_text_to_ascii("통관* 비용")
+    )
+    assert r("7c7") == "ⓒ"
     assert "ⓒ" in r(hangul_text_to_ascii("ⓒ 분담하는"))

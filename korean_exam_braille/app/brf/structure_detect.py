@@ -27,8 +27,8 @@ _CHOICE_ASCII_SIMPLE = re.compile(r"^\s*(#[a-eA-E])\s+")
 _SEPARATOR = re.compile(
     r"^\s*(?:"
     r"([=\-\.\*_])\1{5,}"
-    r"|=[gG]{5,}="
-    r"|[gG]{8,}"
+    r"|=[gG7]{5,}="
+    r"|[gG7]{8,}"
     r")\s*$"
 )
 

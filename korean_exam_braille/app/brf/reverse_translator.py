@@ -27,7 +27,7 @@ from korean_exam_braille.app.brf.korean_tables import (
     NUMBER_MAP,
     NUMBER_SIGN,
     ON_SIGN,
-    ON_SIGN_JAMO,
+    ON_SIGN_BODIES,
     PUNCT_MULTI,
     PUNCT_SINGLE,
     ROMAN_SIGN,
@@ -45,8 +45,10 @@ _PUNCT_MULTI_SORTED: list[tuple[str, str]] = sorted(
 
 # 종성으로 붙이면 안 되는 닫는 복합 부호 접두 (2칸+)
 _CLOSING_MULTI_PREFIXES = frozenset(
-    k for k, v in PUNCT_MULTI.items() if v in {"’", "”", "』", "」", ")", "}"}
-) | frozenset({"0'", "02", "01", "00", ",0"})
+    k
+    for k, v in PUNCT_MULTI.items()
+    if v in {"’", "”", "』", "」", ")", "}", "]", "〉", "》", ">"}
+) | frozenset({"0'", "02", "01", "00", ",0", "07", ";0"})
 
 _LATIN_LETTERS = frozenset("abcdefghijklmnopqrstuvwxyz")
 # 대문자 약어(EXW) 직후 한글 조사로만 종료. a–z↔한글 겹침을 피한다.
@@ -77,13 +79,34 @@ def _is_separator_line(text: str) -> bool:
     if len(s) < 6:
         return False
     body = s.replace(" ", "")
-    if s.startswith("=") and s.endswith("=") and set(body) <= set("=gG"):
+    if len(body) < 6:
+        return False
+    # =ggg…g= 또는 =777…7= (참고 BRF 구분선)
+    if (
+        s.startswith("=")
+        and s.endswith("=")
+        and set(body) <= set("=gG7")
+    ):
         return True
-    if len(body) >= 6 and len(set(body)) == 1:
+    if len(set(body)) == 1:
         return True
-    if len(body) >= 6 and all(ch in "-=._*gG=" for ch in body):
+    if all(ch in "-=._*gG7=" for ch in body):
         return True
+    # 표 가로선: 구조 셀만으로 구성되고 동일 셀이 대부분
+    from collections import Counter
+
+    structural = set("3-=gG7.*!0j4'")
+    if len(body) >= 8 and set(body) <= structural:
+        counts = Counter(body)
+        _most, cnt = counts.most_common(1)[0]
+        if cnt / len(body) >= 0.65:
+            return True
     return False
+
+
+def _separator_ink(text: str) -> str:
+    """구분선은 묵자에서 가로줄로 정규화."""
+    return "─" * 16
 
 
 def _syllable(cho: str, jung: str, jong: str = "") -> str:
@@ -115,33 +138,59 @@ def _unknown(cell: str) -> str:
 def _match_punct(chars: list[str], i: int) -> tuple[str, int] | None:
     """복합 문장부호 최장 일치. (묵자, 소비 칸 수).
 
-    `82`는 뒤에 `#`가 오면 지문 범위이므로 대괄호로 보지 않는다.
+    `82`는 지문 범위(82#…@9#…;0)일 때만 대괄호로 보지 않는다.
+    `82#c…;0` ([3점] 등)은 여는 `[` 로 처리한다.
     """
     for key, ink in _PUNCT_MULTI_SORTED:
         got = _slice_norm(chars, i, len(key))
         if got != key:
             continue
         if key == "82":
-            nxt = _peek(chars, i + 2)
-            if nxt == NUMBER_SIGN:
+            rest = normalize_brf_ascii("".join(chars[i:]))
+            if _PASSAGE_RANGE_ASCII.match(rest):
                 continue
         return ink, len(key)
     return None
 
 
 def _try_circled_digit(chars: list[str], i: int, out: list[str]) -> int | None:
-    """원문자 번호 7#a7 → ① … 7#e7 → ⑤."""
-    if _slice_norm(chars, i, 2) != "7#":
+    """원문자 선택지 번호.
+
+    - 관례 A: 7#a7 … 7#e7 → ①…⑤ (정방향 인코딩)
+    - 관례 B: #1 … #5 (⠼⠂…⠼⠢) → ①…⑤ (참고 시험지 BRF)
+    """
+    # A) 7#a7
+    if _slice_norm(chars, i, 2) == "7#":
+        if i + 3 >= len(chars):
+            return None
+        dig = _norm_cell(chars[i + 2])
+        if dig not in "abcde":
+            return None
+        if _norm_cell(chars[i + 3]) != "7":
+            return None
+        out.append("①②③④⑤"["abcde".index(dig)])
+        return i + 4
+
+    # B) #1 … #5 (수표 뒤 하부 점형 — 일반 숫자 a–j 와 구분)
+    if _norm_cell(chars[i]) == NUMBER_SIGN and i + 1 < len(chars):
+        dig = _norm_cell(chars[i + 1])
+        if dig in "12345":
+            out.append("①②③④⑤"["12345".index(dig)])
+            return i + 2
+    return None
+
+
+def _try_choice_item_mark(chars: list[str], i: int, out: list[str]) -> int | None:
+    """선택지 항목 표지 ⠇⠴ (_0) — 묵자에서는 생략."""
+    if _slice_norm(chars, i, 2) != "_0":
         return None
-    if i + 3 >= len(chars):
-        return None
-    dig = _norm_cell(chars[i + 2])
-    if dig not in "abcde":
-        return None
-    if _norm_cell(chars[i + 3]) != "7":
-        return None
-    out.append(str("①②③④⑤"[ "abcde".index(dig) ]))
-    return i + 4
+    end = i + 2
+    if end < len(chars) and chars[end] == " ":
+        end += 1
+    # ①_0한글 → ① 한글
+    if out and out[-1] in "①②③④⑤":
+        out.append(" ")
+    return end
 
 
 def _hangul_particle_len(chars: list[str], i: int) -> int:
@@ -205,10 +254,16 @@ def _take_vowel(chars: list[str], i: int) -> tuple[str, int] | None:
     return None
 
 
-def _take_final(chars: list[str], i: int) -> tuple[str, int, bool] | None:
+def _take_final(
+    chars: list[str],
+    i: int,
+    *,
+    skip_jong: frozenset[str] | None = None,
+) -> tuple[str, int, bool] | None:
     """(종성 또는 문장부호, 새 인덱스, 문장부호 여부).
 
     닫는 복합 부호 시작이면 종성으로 가져가지 않는다.
+    skip_jong: 드러냄표(7) 등 종성으로 쓰지 않을 셀.
     """
     if i >= len(chars):
         return None
@@ -216,6 +271,8 @@ def _take_final(chars: list[str], i: int) -> tuple[str, int, bool] | None:
         return None
 
     n = _norm_cell(chars[i])
+    if skip_jong and n in skip_jong:
+        return None
     nxt = _peek(chars, i + 1)
 
     if nxt is not None and (n + nxt) in JONGSEONG_DIGRAPHS:
@@ -251,12 +308,15 @@ def _can_begin_syllable(cell: str | None) -> bool:
 
 
 def _jong_cell_can_be_reanalyzed_as_onset(cell: str) -> bool:
-    """종성으로 읽은 셀이 사실은 다음 음절 시작일 수 있는지.
+    """종성으로 읽은 셀을 다음 음절 초성으로 재해석할지.
 
-    한국 점자는 초성·종성 점형이 다르므로, 종성 전용 셀(a,b,7,…)은
-    다음이 모음이어도 받침으로 유지해야 한다. (합의·대상에서·승낙이)
+    한국 점자는 초성·종성 점형이 대체로 다르며, `/` 는 종성 ㅆ과 중성 ㅖ가
+    겹친다. 모음 뒤 `/` 는 였/었의 받침 ㅆ으로 유지해야 한다.
     """
-    return _can_begin_syllable(cell)
+    if cell == "/":
+        return False
+    # 종성 전용 셀은 재해석하지 않음. 초성·가류 약자와 겹치는 경우만.
+    return cell in CHOSEONG or cell in ABBREV_CV or cell == TENSED_PREFIX
 
 
 def _emit_syllable_with_optional_final(
@@ -265,8 +325,10 @@ def _emit_syllable_with_optional_final(
     cho: str,
     jung: str,
     i_after_vowel: int,
+    *,
+    skip_jong: frozenset[str] | None = None,
 ) -> int:
-    final = _take_final(chars, i_after_vowel)
+    final = _take_final(chars, i_after_vowel, skip_jong=skip_jong)
     if final is None:
         out.append(_syllable(cho, jung))
         return i_after_vowel
@@ -296,9 +358,16 @@ def _emit_syllable_with_optional_final(
     return new_i
 
 
-def _emit_abbrev_cv(out: list[str], chars: list[str], cell: str, i: int) -> int:
+def _emit_abbrev_cv(
+    out: list[str],
+    chars: list[str],
+    cell: str,
+    i: int,
+    *,
+    skip_jong: frozenset[str] | None = None,
+) -> int:
     cho, jung = ABBREV_CV[cell]
-    final = _take_final(chars, i + 1)
+    final = _take_final(chars, i + 1, skip_jong=skip_jong)
     if final is None:
         out.append(_syllable(cho, jung))
         return i + 1
@@ -327,44 +396,79 @@ def _emit_abbrev_cv(out: list[str], chars: list[str], cell: str, i: int) -> int:
     return new_i
 
 
+def _on_sign_after_ok(chars: list[str], after_i: int) -> bool:
+    """온표 자모 본문 직후가 경계·다음 온표·닫는부호·구두점·다음 음절이면 온표로 인정."""
+    after = _peek(chars, after_i)
+    if _is_boundary(after) or after == ON_SIGN or after == "7":
+        return True
+    if after is not None and after in PUNCT_SINGLE:
+        return True
+    if _starts_closing_multi(chars, after_i):
+        return True
+    if after is not None and _match_punct(chars, after_i) is not None:
+        return True
+    if after is not None and _can_begin_syllable(after):
+        return True
+    return False
+
+
+def _match_on_sign_body(chars: list[str], i: int) -> tuple[str, int] | None:
+    """chars[i]==온표일 때 본문 최장 일치 → (자모, 다음 인덱스)."""
+    if _norm_cell(chars[i]) != ON_SIGN or i + 1 >= len(chars):
+        return None
+    for body, jamo in ON_SIGN_BODIES:
+        end = i + 1 + len(body)
+        if end > len(chars):
+            continue
+        if any(_norm_cell(chars[i + 1 + k]) != body[k] for k in range(len(body))):
+            continue
+        if not _on_sign_after_ok(chars, end):
+            continue
+        return jamo, end
+    return None
+
+
 def _try_on_sign(chars: list[str], i: int, out: list[str]) -> int | None:
     """온표(=) + 단독 자모. 옹 약자와 동일 셀이므로 문맥으로 구분.
 
-    다음이 자모이고, 그 다음이 경계·닫는부호·문자열 끝이면 온표로 본다.
-    (따옴표 안 ‘ㅣ’ 등). 그 외 `=` 단독/뒤에 이어지는 음절은 옹 약자로 둔다.
+    본문은 JAMO_COMPAT 역매핑 최장 일치(ㅇ·된소리·이중모음·겹받침).
+    본문 뒤가 경계·닫는부호·다음 온표이면 온표로 본다.
     """
-    if _norm_cell(chars[i]) != ON_SIGN:
+    matched = _match_on_sign_body(chars, i)
+    if matched is None:
         return None
-    if i + 1 >= len(chars):
-        return None
-
-    # 온표 + 된소리표 + 초성
-    if _norm_cell(chars[i + 1]) == TENSED_PREFIX and i + 2 < len(chars):
-        body = _norm_cell(chars[i + 2])
-        if body in TENSED_MAP:
-            after = _peek(chars, i + 3)
-            if _is_boundary(after) or _starts_closing_multi(chars, i + 3) or (
-                after is not None and _match_punct(chars, i + 3)
-            ):
-                out.append(TENSED_MAP[body])
-                return i + 3
-
-    nxt = _norm_cell(chars[i + 1])
-    jamo = ON_SIGN_JAMO.get(nxt)
-    if jamo is None:
-        return None
-
-    after = _peek(chars, i + 2)
-    # 온표 문맥: 자모 한 칸 뒤가 끝·공백·닫는 부호
-    if not (
-        _is_boundary(after)
-        or _starts_closing_multi(chars, i + 2)
-        or (after is not None and _match_punct(chars, i + 2) is not None)
-    ):
-        return None
-
+    jamo, end = matched
     out.append(jamo)
-    return i + 2
+    return end
+
+
+def _try_skip_decorative_run(chars: list[str], i: int) -> int | None:
+    """행 중간 장식/표선 반복 셀 건너뛰기 (ggg…, 333…)."""
+    if i >= len(chars):
+        return None
+    cell = _norm_cell(chars[i])
+    if cell not in set("3g7=*"):
+        return None
+    j = i
+    while j < len(chars) and _norm_cell(chars[j]) == cell:
+        j += 1
+    if j - i >= 6:
+        return j
+    return None
+
+
+def _cleanup_hanja_placeholders(text: str) -> str:
+    """한자 점형이 한글·미지로 깨진 뒤 (훈-음)만 남은 경우 <한자>로 보존."""
+    return re.sub(
+        r"(?:[가-힣]?<U:[^>]+>)+(\([^)]+-[^)]+\))",
+        r"<한자>\1",
+        text,
+    )
+
+
+def _normalize_example_box_title(text: str) -> str:
+    """참고 BRF 관례 ,‘보기’, → <보기>."""
+    return re.sub(r",[‘']([^’']+)[’'],", r"<\1>", text)
 
 
 def _try_passage_range(chars: list[str], i: int, out: list[str]) -> int | None:
@@ -534,17 +638,19 @@ def _try_roman_mode(chars: list[str], i: int, out: list[str]) -> int | None:
 def reverse_translate_line(raw_ascii: str) -> str:
     text = normalize_brf_ascii(raw_ascii)
     if _is_separator_line(text):
-        return text.strip()
+        return _separator_ink(text)
 
     chars = list(text)
     i = 0
     out: list[str] = []
     # 직전 출력이 여는 따옴표/낫표면 온표 해석을 우선
     open_quote_depth = 0
+    emph_open = False
 
     while i < len(chars):
         ch = chars[i]
         n = _norm_cell(ch)
+        skip_jong = frozenset({"7"}) if emph_open else None
 
         if ch == " ":
             out.append(" ")
@@ -563,39 +669,69 @@ def reverse_translate_line(raw_ascii: str) -> str:
             i = jumped
             continue
 
+        # 1c) 선택지 항목 표지 _0 (⠇⠴)
+        jumped = _try_choice_item_mark(chars, i, out)
+        if jumped is not None:
+            i = jumped
+            continue
+
+        # 1d) 장식/표선 반복
+        jumped = _try_skip_decorative_run(chars, i)
+        if jumped is not None:
+            i = jumped
+            continue
+
         # 2) 복합 문장부호 최장 일치
         punct = _match_punct(chars, i)
         if punct:
             ink, ncons = punct
             if ink:
                 out.append(ink)
-            if ink in {"‘", "“", "『", "「", "(", "["}:
+            if ink in {"‘", "“", "『", "「"}:
                 open_quote_depth += 1
-            elif ink in {"’", "”", "』", "」", ")", "]"} and open_quote_depth > 0:
+            elif ink in {"’", "”", "』", "」"} and open_quote_depth > 0:
                 open_quote_depth -= 1
             i += ncons
             continue
 
-        # 3) 온표 + 단독 자모 (따옴표 안이거나 자모+닫힘 문맥)
+        # 2b) 따옴표·낫표 직후 단독 로마자 한 글자 (‘a’~‘e’).
+        if (
+            open_quote_depth > 0
+            and n in _LATIN_LETTERS
+            and out
+            and out[-1] in {"‘", "“", "「", "『"}
+        ):
+            nxt_i = i + 1
+            if (
+                _starts_closing_multi(chars, nxt_i)
+                or (
+                    nxt_i < len(chars)
+                    and _match_punct(chars, nxt_i) is not None
+                )
+                or _is_boundary(_peek(chars, nxt_i))
+            ):
+                out.append(n)
+                i += 1
+                continue
+
+        # 3) 온표 + 단독 자모 (종성/초성/모음 본문, 닫는따옴표 보호)
         if n == ON_SIGN:
-            # 따옴표 안에서는 자모 뒤 조건 완화: 다음이 자모면 온표 시도
-            if open_quote_depth > 0 and i + 1 < len(chars):
-                nxt = _norm_cell(chars[i + 1])
-                if nxt == TENSED_PREFIX and i + 2 < len(chars):
-                    body = _norm_cell(chars[i + 2])
-                    if body in TENSED_MAP:
-                        out.append(TENSED_MAP[body])
-                        i += 3
-                        continue
-                if nxt in ON_SIGN_JAMO:
-                    out.append(ON_SIGN_JAMO[nxt])
-                    i += 2
-                    continue
             jumped = _try_on_sign(chars, i, out)
             if jumped is not None:
                 i = jumped
                 continue
             # else: fall through → 옹 약자
+
+        # 3b) 드러냄표 ⠶(7) … 7 — 종성 ㅇ으로 붙지 못한 위치
+        if n == "7":
+            if emph_open:
+                out.append("’")
+                emph_open = False
+            else:
+                out.append("‘")
+                emph_open = True
+            i += 1
+            continue
 
         # 4) 숫자
         if n == NUMBER_SIGN:
@@ -655,7 +791,9 @@ def reverse_translate_line(raw_ascii: str) -> str:
                 # 중복 표기된 ㅏ(<) 건너뛰기
                 if _peek(chars, j) == "<":
                     j += 1
-                i = _emit_syllable_with_optional_final(out, chars, "ㄲ", "ㅏ", j)
+                i = _emit_syllable_with_optional_final(
+                    out, chars, "ㄲ", "ㅏ", j, skip_jong=skip_jong
+                )
                 continue
             if body in TENSED_MAP:
                 cho = TENSED_MAP[body]
@@ -673,10 +811,14 @@ def reverse_translate_line(raw_ascii: str) -> str:
                 vowel = _take_vowel(chars, j)
                 if vowel:
                     jung, k = vowel
-                    i = _emit_syllable_with_optional_final(out, chars, cho, jung, k)
+                    i = _emit_syllable_with_optional_final(
+                        out, chars, cho, jung, k, skip_jong=skip_jong
+                    )
                     continue
                 # 된소리 초성 뒤 모음이 없으면 가류처럼 암시 ㅏ
-                i = _emit_syllable_with_optional_final(out, chars, cho, "ㅏ", j)
+                i = _emit_syllable_with_optional_final(
+                    out, chars, cho, "ㅏ", j, skip_jong=skip_jong
+                )
                 continue
 
         # 8) 초성 + VC 약자
@@ -699,15 +841,26 @@ def reverse_translate_line(raw_ascii: str) -> str:
             continue
 
         # 10) 초성 + 모음 / CV 약자
+        # 하(j)+였/었(:/ 또는 s/) → 하였/하었. 자(.)+ㅕ+ㅆ → 졌 (자였 아님).
         if n in CHOSEONG:
             cho = CHOSEONG[n]
             vowel = _take_vowel(chars, i + 1)
+            if vowel and n == "j":
+                jung, k = vowel
+                if jung in {"ㅕ", "ㅓ"} and _peek(chars, k) == "/":
+                    out.append(_syllable("ㅎ", "ㅏ"))
+                    i = _emit_syllable_with_optional_final(
+                        out, chars, "ㅇ", jung, k, skip_jong=skip_jong
+                    )
+                    continue
             if vowel:
                 jung, k = vowel
-                i = _emit_syllable_with_optional_final(out, chars, cho, jung, k)
+                i = _emit_syllable_with_optional_final(
+                    out, chars, cho, jung, k, skip_jong=skip_jong
+                )
                 continue
             if n in ABBREV_CV:
-                i = _emit_abbrev_cv(out, chars, n, i)
+                i = _emit_abbrev_cv(out, chars, n, i, skip_jong=skip_jong)
                 continue
             # ㄹ(“)은 쉼표(⠐)와 동일 셀 — 뒤에 음절이 이어지지 않으면 쉼표
             if n == '"':
@@ -719,14 +872,16 @@ def reverse_translate_line(raw_ascii: str) -> str:
             continue
 
         if n in ABBREV_CV:
-            i = _emit_abbrev_cv(out, chars, n, i)
+            i = _emit_abbrev_cv(out, chars, n, i, skip_jong=skip_jong)
             continue
 
         # 11) 중성만 (초성 ㅇ 생략) — 온표가 없을 때 ‘아’
         vowel = _take_vowel(chars, i)
         if vowel:
             jung, k = vowel
-            i = _emit_syllable_with_optional_final(out, chars, "ㅇ", jung, k)
+            i = _emit_syllable_with_optional_final(
+                out, chars, "ㅇ", jung, k, skip_jong=skip_jong
+            )
             continue
 
         # 12) 1칸 구두점
@@ -767,7 +922,7 @@ def reverse_translate_line(raw_ascii: str) -> str:
         out.append(_unknown(ch if ch.strip() else n))
         i += 1
 
-    return "".join(out)
+    return _normalize_example_box_title(_cleanup_hanja_placeholders("".join(out)))
 
 
 def reverse_translate_unicode(unicode_braille: str) -> str:
