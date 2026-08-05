@@ -18,7 +18,7 @@
 | PDF 업로드 | 작업 세션에 PDF 적재 |
 | 분석 및 변환 | `ConversionWorkspace.analyze_and_convert()` |
 | BRF 다운로드 | 마지막 변환 결과 |
-| DTBook XML 다운로드 | DAISY용 중간 구조 (스키마·완성도는 후속; 미완 시 비활성+안내) |
+| DTBook XML 다운로드 | DAISY용 중간 구조 (**DTBook 2005-3**, 패키지 아님) |
 
 앱 내 수동 수정 UI는 **두지 않는다**.
 
@@ -29,7 +29,7 @@
 | 모드 | 패널 |
 |------|------|
 | A | 원문 PDF(읽기 전용) · BRF · 역점역 |
-| B | 원문 PDF(읽기 전용) · 구조 계층 · **DTBook XML 미리보기** |
+| B | 원문 PDF(읽기 전용) · 구조 계층 · **DTBook XML** |
 
 구현 스택: 웹 `/dev` — 모드 A/B 패널. PDF는 읽기 전용(이미지+추출 텍스트).
 
@@ -67,7 +67,7 @@ pdf · exam · braille · layout · brf · nav
 | `ConversionWorkspace` | `session.workspace` | 사용자/개발자 공용 — 열기·변환·BRF/DTBook (편집 API 없음) |
 | `PdfStructureService` | `session.pdf_structure` | 저수준 PDF 세션 (진단·테스트; 편집은 제품 UI에서 비노출) |
 | `default_pipeline()` / `PipelineResult` | `pipeline` | 워크스페이스가 감쌈 |
-| `DtbookExporter` | `daisy.ports` | Exam → DTBook XML |
+| `DtbookExporter` | `daisy.ports` | Exam → DTBook 2005-3 XML (`ExamDtbookExporter`) |
 | `ExamNavigator` + `NavLocation` | `nav` | 개발자 모드 B 계층 패널 |
 | `brf` reverse / compare | `brf/*` | 개발자 모드 A 역점역·비교 |
 
@@ -108,6 +108,6 @@ exam_document / source_path
 - [ ] 사용자 플로우는 웹 셸 + `ConversionWorkspace`만
 - [ ] 변환은 `analyze_and_convert()` (또는 동일 의미)
 - [x] 제품 UI에 병합/분할/태그 수동 편집 없음
-- [ ] 모드 B XML = DTBook 미리보기 (`DtbookExporter`)
+- [x] 모드 B XML = DTBook 2005-3 구조 (`ExamDtbookExporter`)
 - [ ] 상태/오류는 §0.3 `aria-live` 계약
 - [ ] `braille/` · `layout/` 를 UI에서 import하지 않음

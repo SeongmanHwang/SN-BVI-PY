@@ -41,8 +41,8 @@
     btnDtbook.setAttribute("aria-disabled", dtReady ? "false" : "true");
     btnDtbook.tabIndex = dtReady ? 0 : -1;
     dtbookWhy.textContent = dtReady
-      ? "DAISY용 중간 구조 XML을 받습니다."
-      : "DTBook XML 다운로드는 아직 준비 중입니다.";
+      ? "DAISY 제작용 중간 구조(DTBook 2005-3) XML을 받습니다."
+      : "먼저 분석 및 변환을 실행하세요.";
   }
 
   async function refreshStatus() {

@@ -56,7 +56,7 @@ PDF 파일
 | `nav/` | Exam 트리 탐색 | `TreeExamNavigator` |
 | `pipeline/` | 포트 조립·실행 | `ConversionPipeline` |
 | `session/` | UI용 Qt-free 세션 | `ConversionWorkspace`, `PdfStructureService` |
-| `daisy/` | Exam → DTBook XML (미리보기·후속 다운로드) | `PreviewDtbookExporter`, `StubDtbookExporter` |
+| `daisy/` | Exam → DTBook 2005-3 구조 XML (DAISY 중간 원고) | `ExamDtbookExporter` |
 | `web/` | 사용자 모드 웹 셸 (WCAG 지향) | Starlette |
 | `ui/*` | 레거시 진단 UI (축소 예정; [ui_shell.md](ui_shell.md)) | PySide6 |
 | `ml/` | (후속) 결정·후보 — 비어 있음 | — |

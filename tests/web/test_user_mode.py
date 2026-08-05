@@ -52,14 +52,16 @@ def test_user_flow_upload_convert_brf(client, tiny_pdf_bytes: bytes):
     conv = client.post("/api/convert")
     assert conv.status_code == 200
     assert conv.json()["status"]["has_brf"] is True
-    assert conv.json()["status"]["dtbook_download_available"] is False
+    assert conv.json()["status"]["dtbook_download_available"] is True
 
     brf = client.get("/api/download/brf")
     assert brf.status_code == 200
     assert len(brf.content) > 0
 
     dtb = client.get("/api/download/dtbook")
-    assert dtb.status_code == 501
+    assert dtb.status_code == 200
+    assert b"dtbook" in dtb.content.lower()
+    assert b"2005-3" in dtb.content
 
 
 def test_developer_bundle_and_page(client, tiny_pdf_bytes: bytes):

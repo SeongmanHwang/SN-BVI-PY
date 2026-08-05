@@ -83,10 +83,8 @@ def create_app(*, workspace: ConversionWorkspace | None = None) -> Starlette:
         msg = (
             f"변환이 완료되었습니다. 점자 {pages}면"
             + (f", 경고 {warn_n}건" if warn_n else "")
-            + ". BRF를 받을 수 있습니다."
+            + ". BRF와 DTBook XML을 받을 수 있습니다."
         )
-        if not ws.dtbook_download_available:
-            msg += " DTBook XML 다운로드는 아직 준비 중입니다."
         return JSONResponse(
             {
                 "ok": True,
@@ -116,9 +114,9 @@ def create_app(*, workspace: ConversionWorkspace | None = None) -> Starlette:
             return JSONResponse(
                 {
                     "ok": False,
-                    "message": "DTBook XML 내보내기는 아직 준비 중입니다.",
+                    "message": "먼저 분석 및 변환을 실행하세요.",
                 },
-                status_code=501,
+                status_code=400,
             )
         try:
             xml = ws.dtbook_xml(for_user_download=True)

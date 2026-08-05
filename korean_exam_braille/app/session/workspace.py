@@ -6,9 +6,8 @@ import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from korean_exam_braille.app.daisy.exporter import PreviewDtbookExporter
+from korean_exam_braille.app.daisy.exporter import ExamDtbookExporter
 from korean_exam_braille.app.daisy.ports import DtbookExporter
-from korean_exam_braille.app.daisy.stub import StubDtbookExporter
 from korean_exam_braille.app.exam.models import ExamDocument
 from korean_exam_braille.app.exam.tree_text import format_exam_summary, format_exam_tree
 from korean_exam_braille.app.pipeline.pipeline import PipelineResult
@@ -24,10 +23,9 @@ class ConversionWorkspace:
     """
 
     service: PdfStructureService = field(default_factory=PdfStructureService)
-    # 사용자 모드 다운로드: 스키마 확정 전엔 Stub(비활성)
-    user_dtbook: DtbookExporter = field(default_factory=StubDtbookExporter)
-    # 개발자 모드 B 미리보기
-    preview_dtbook: DtbookExporter = field(default_factory=PreviewDtbookExporter)
+    # Exam → DTBook 2005-3 구조 XML (사용자 다운로드 · 개발자 미리보기 공용)
+    user_dtbook: DtbookExporter = field(default_factory=ExamDtbookExporter)
+    preview_dtbook: DtbookExporter = field(default_factory=ExamDtbookExporter)
     _tmpdir: tempfile.TemporaryDirectory[str] | None = field(default=None, repr=False)
 
     last_result: PipelineResult | None = None
