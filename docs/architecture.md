@@ -55,7 +55,10 @@ PDF 파일
 | `brf/` | BRF 입출력·역점역·비교·주석 | parser, reverse_translator, compare, exam_diff |
 | `nav/` | Exam 트리 탐색 | `TreeExamNavigator` |
 | `pipeline/` | 포트 조립·실행 | `ConversionPipeline` |
-| `ui/*` | 진단·미리보기·Inspector (편집은 최소화) | PySide6 |
+| `session/` | UI용 Qt-free 세션 | `ConversionWorkspace`, `PdfStructureService` |
+| `daisy/` | Exam → DTBook XML (미리보기·후속 다운로드) | `PreviewDtbookExporter`, `StubDtbookExporter` |
+| `web/` | 사용자 모드 웹 셸 (WCAG 지향) | Starlette |
+| `ui/*` | 레거시 진단 UI (축소 예정; [ui_shell.md](ui_shell.md)) | PySide6 |
 | `ml/` | (후속) 결정·후보 — 비어 있음 | — |
 
 설정: `profiles/default.yaml` (줄 폭·면 높이·들여쓰기).  
@@ -75,7 +78,7 @@ PDF 파일
 5. **읽기 순서** (`reading_order`): 열·수직 순으로 `reading_order` 부여.
 6. **후보 태그** (`candidates`): 정규식·위치로 Header/Question/Choice/PassageGroup 등 `candidate_tags` 부여.
 
-진단 UI에서 병합·분할·태그 덮어쓰기가 가능하나, **제품 목표는 이 단계 자동 정확도를 올려 UI 수정을 줄이는 것**이다.
+진단 UI는 **읽기 전용**이다. 병합·분할·태그 덮어쓰기는 제품 UI에서 제거했고, `PdfStructureService`·테스트에만 남는다. **제품 목표는 이 단계 자동 정확도를 올려 UI 수정을 불필요하게 하는 것**이다.
 
 ### 4.2 Exam (`exam/`)
 
@@ -124,7 +127,9 @@ PDF 파일
 
 ### 4.6 탐색 (`nav/`)
 
-`TreeExamNavigator`: ExamDocument만 바인딩. 부모/형제/유형별 다음·원위치. PDF 블록 id ↔ 노드 양방향 연동은 UI. 점역·BRF 면 동기화는 후속 (`source_node_ids`).
+`TreeExamNavigator`: ExamDocument만 바인딩. 부모/형제/유형별 다음·원위치. PDF 블록 id ↔ 노드 양방향 연동은 UI 어댑터. 점역·BRF 면 동기화는 후속 (`source_node_ids`).
+
+UI 셸이 Exam/Nav를 만들 때는 `session.PdfStructureService.create_navigator()`를 쓴다 (빌더·내비게이터 주입 가능).
 
 ---
 

@@ -1,4 +1,8 @@
-"""계층 탐색 대화상자 — 동일 NavSidePanel 재사용 (보조 진입점)."""
+"""계층 탐색 대화상자 — 보조 진입점(도킹 패널이 기본).
+
+메인 PDF 창은 `NavSidePanel` 도크(보기 → 계층 탐색)를 쓴다.
+이 대화상자는 독립 Exam만 있을 때 쓸 수 있으나, 변환 미리보기에서는 쓰지 않는다.
+"""
 
 from __future__ import annotations
 

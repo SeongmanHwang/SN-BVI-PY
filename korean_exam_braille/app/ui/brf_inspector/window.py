@@ -27,17 +27,16 @@ from PySide6.QtWidgets import (
 from korean_exam_braille.app.brf.annotations import (
     annotation_path_for,
     load_brf_with_annotations,
-    save_annotations,
 )
-from korean_exam_braille.app.brf.models import STRUCTURE_TAGS, BrfDocument, BrfLine
-from korean_exam_braille.app.brf.parser import parse_brf_text, save_brf
+from korean_exam_braille.app.brf.models import BrfDocument, BrfLine
+from korean_exam_braille.app.brf.parser import parse_brf_text
 from korean_exam_braille.app.ui import mode_switch
 
 
 class BrfInspectorWindow(QMainWindow):
     def __init__(self, initial_path: str | None = None) -> None:
         super().__init__()
-        self.setWindowTitle("BRF Inspector — 수능 국어 점자")
+        self.setWindowTitle("BRF Inspector — 읽기 전용 진단 (레거시)")
         self.resize(1280, 800)
 
         self.document: BrfDocument | None = None
@@ -58,13 +57,6 @@ class BrfInspectorWindow(QMainWindow):
         self.act_open.setShortcut(QKeySequence.Open)
         self.act_open.triggered.connect(self.open_file_dialog)
 
-        self.act_save_ann = QAction("태그 저장", self)
-        self.act_save_ann.setShortcut(QKeySequence.Save)
-        self.act_save_ann.triggered.connect(self.save_current_annotations)
-
-        self.act_save_brf = QAction("BRF 다른 이름으로 저장…", self)
-        self.act_save_brf.triggered.connect(self.save_brf_as)
-
         self.act_prev = QAction("이전 면", self)
         self.act_prev.setShortcut(QKeySequence.MoveToPreviousPage)
         self.act_prev.triggered.connect(self.prev_page)
@@ -73,9 +65,6 @@ class BrfInspectorWindow(QMainWindow):
         self.act_next.setShortcut(QKeySequence.MoveToNextPage)
         self.act_next.triggered.connect(self.next_page)
 
-        self.act_accept_candidates = QAction("후보→태그 적용(현재 면)", self)
-        self.act_accept_candidates.triggered.connect(self.accept_candidates_on_page)
-
         self.act_switch_pdf = QAction("PDF Structure Viewer로 전환", self)
         self.act_switch_pdf.setShortcut(QKeySequence("Ctrl+2"))
         self.act_switch_pdf.triggered.connect(self.switch_to_pdf_viewer)
@@ -83,8 +72,6 @@ class BrfInspectorWindow(QMainWindow):
     def _build_menu(self) -> None:
         menu_file = self.menuBar().addMenu("파일")
         menu_file.addAction(self.act_open)
-        menu_file.addAction(self.act_save_ann)
-        menu_file.addAction(self.act_save_brf)
 
         menu_view = self.menuBar().addMenu("보기")
         menu_view.addAction(self.act_prev)
@@ -97,13 +84,9 @@ class BrfInspectorWindow(QMainWindow):
         bar.setMovable(False)
         self.addToolBar(bar)
         bar.addAction(self.act_open)
-        bar.addAction(self.act_save_ann)
-        bar.addAction(self.act_save_brf)
         bar.addSeparator()
         bar.addAction(self.act_prev)
         bar.addAction(self.act_next)
-        bar.addSeparator()
-        bar.addAction(self.act_accept_candidates)
         bar.addSeparator()
         bar.addAction(self.act_switch_pdf)
 
@@ -153,10 +136,10 @@ class BrfInspectorWindow(QMainWindow):
         )
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table.itemSelectionChanged.connect(self._on_row_selected)
-        self.table.itemChanged.connect(self._on_item_changed)
         self.table.horizontalHeader().setStretchLastSection(True)
-        splitter.addWidget(self._wrap("행 번호 / 구조 태그 / 주석", self.table))
+        splitter.addWidget(self._wrap("행 · 후보 · 태그 (읽기 전용)", self.table))
 
         splitter.setSizes([420, 320])
         top.setSizes([400, 400, 400])
@@ -226,38 +209,6 @@ class BrfInspectorWindow(QMainWindow):
         self.show_page(0)
         self.statusBar().showMessage(message)
 
-    def save_current_annotations(self) -> None:
-        if not self.document or not self.document.source_path:
-            QMessageBox.information(self, "저장", "먼저 BRF 파일을 여세요.")
-            return
-        self._flush_table_edits()
-        path = save_annotations(self.document)
-        self.statusBar().showMessage(f"태그 저장: {path}")
-
-    def save_brf_as(self) -> None:
-        if not self.document:
-            return
-        path, _ = QFileDialog.getSaveFileName(
-            self,
-            "BRF 저장",
-            self.document.source_path or "output.brf",
-            "BRF files (*.brf);;All files (*.*)",
-        )
-        if not path:
-            return
-        save_brf(self.document, path)
-        self.statusBar().showMessage(f"BRF 저장: {path}")
-
-    def accept_candidates_on_page(self) -> None:
-        if not self.document:
-            return
-        page = self.document.pages[self._current_page]
-        for line in page.lines:
-            if line.candidate_tags and not line.tags:
-                line.tags = list(line.candidate_tags)
-        self.show_page(self._current_page)
-        self.statusBar().showMessage("현재 면 후보 태그를 적용했습니다. 저장을 잊지 마세요.")
-
     def prev_page(self) -> None:
         if self.document and self._current_page > 0:
             self.show_page(self._current_page - 1)
@@ -321,48 +272,9 @@ class BrfInspectorWindow(QMainWindow):
             ]
             for col, value in enumerate(values):
                 item = QTableWidgetItem(value)
-                if col in (0, 1, 2, 3, 6):
-                    item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 self.table.setItem(row, col, item)
         self._updating = False
-
-    def _flush_table_edits(self) -> None:
-        if not self.document:
-            return
-        page = self.document.pages[self._current_page]
-        for row, line in enumerate(page.lines):
-            tag_item = self.table.item(row, 4)
-            note_item = self.table.item(row, 5)
-            if tag_item:
-                raw = tag_item.text().strip()
-                tags = [t.strip() for t in raw.split(",") if t.strip()]
-                # 알려지지 않은 태그도 허용하되 공백 제거
-                line.tags = tags
-            if note_item:
-                note = note_item.text().strip()
-                line.notes = note or None
-
-    def _on_item_changed(self, item: QTableWidgetItem) -> None:
-        if self._updating or not self.document:
-            return
-        if item.column() not in (4, 5):
-            return
-        page = self.document.pages[self._current_page]
-        row = item.row()
-        if row < 0 or row >= len(page.lines):
-            return
-        line = page.lines[row]
-        if item.column() == 4:
-            tags = [t.strip() for t in item.text().split(",") if t.strip()]
-            unknown = [t for t in tags if t not in STRUCTURE_TAGS]
-            line.tags = tags
-            if unknown:
-                self.statusBar().showMessage(
-                    f"사용자 정의 태그: {', '.join(unknown)} (허용됨)"
-                )
-        elif item.column() == 5:
-            note = item.text().strip()
-            line.notes = note or None
 
     def _on_row_selected(self) -> None:
         rows = self.table.selectionModel().selectedRows()

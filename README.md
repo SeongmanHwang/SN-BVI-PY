@@ -81,9 +81,21 @@
 
 ```bash
 pip install -e ".[dev]"
+# 웹 사용자 모드만: pip install -e ".[web]"
 ```
 
 ### 실행
+
+**사용자 모드 (웹, 기본 제품 UI 방향)**
+
+```bash
+korean-exam-braille-web
+# 또는: python -m korean_exam_braille.app.web.server
+# 사용자 모드: http://127.0.0.1:8765
+# 개발자 모드: http://127.0.0.1:8765/dev
+```
+
+**레거시 진단 UI (Qt, 읽기 전용)**
 
 ```bash
 python -m korean_exam_braille.app.main path/to/file.brf
@@ -92,10 +104,14 @@ python -m korean_exam_braille.app.main --mode brf
 python -m korean_exam_braille.app.main --mode pdf
 ```
 
+블록 병합·분할·태그 편집·구조 저장 메뉴는 제거됨. 제품 플로우는 웹 셸을 사용한다.
+
 `Ctrl+2` — BRF Inspector ↔ PDF 뷰어.  
 `Ctrl+Shift+B` — BRF 변환 미리보기.  
 `Ctrl+Shift+D` — 참고 BRF와 내용 비교(진단).  
 `Ctrl+3` — 계층 탐색 도킹 패널.
+
+제품 모드·접근성 계약: [docs/ui_shell.md](docs/ui_shell.md).
 
 **줄 비교** = ASCII 셀 정합(최종 지표에 가깝다).  
 **내용 비교** = 역점역+앵커 진단(안내는 당분간 예상 차이; 이후 삽입 대상).

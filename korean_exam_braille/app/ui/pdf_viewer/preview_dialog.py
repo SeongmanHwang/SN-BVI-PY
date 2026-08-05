@@ -1,4 +1,4 @@
-"""변환 미리보기 — Exam 트리·경고·선택적 참고 BRF 비교."""
+"""변환 미리보기 — Exam 트리 요약·경고·참고 BRF 비교."""
 
 from __future__ import annotations
 
@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
+    QWidget,
 )
 
 from korean_exam_braille.app.brf.compare import compare_to_reference_file
@@ -28,12 +29,14 @@ class ConversionPreviewDialog(QDialog):
     def __init__(self, parent, result: PipelineResult) -> None:
         super().__init__(parent)
         self.result = result
-        self.setWindowTitle("BRF 변환 미리보기 — 구조·관계")
+        self.setWindowTitle("BRF 변환 미리보기")
         self.resize(900, 640)
 
         layout = QVBoxLayout(self)
-        summary = format_exam_summary(result.exam)
-        layout.addWidget(QLabel(summary))
+        layout.addWidget(QLabel(format_exam_summary(result.exam)))
+        layout.addWidget(
+            QLabel("왼쪽은 구조 요약(읽기 전용). 계층 탐색은 메인 창 보기 → 계층 탐색(Ctrl+3).")
+        )
 
         splitter = QSplitter()
         layout.addWidget(splitter, stretch=1)
@@ -45,14 +48,10 @@ class ConversionPreviewDialog(QDialog):
         self.tree.expandToDepth(2)
         splitter.addWidget(self.tree)
 
-        right = QVBoxLayout()
-        right_w = QPlainTextEdit()
-        # placeholder container
-        from PySide6.QtWidgets import QWidget
-
-        box = QWidget()
-        box.setLayout(right)
-        splitter.addWidget(box)
+        right_box = QWidget()
+        right = QVBoxLayout(right_box)
+        right.setContentsMargins(0, 0, 0, 0)
+        splitter.addWidget(right_box)
 
         right.addWidget(QLabel("경고 · 관계 · 비교"))
         self.side = QPlainTextEdit()
@@ -75,11 +74,8 @@ class ConversionPreviewDialog(QDialog):
         self.btn_compare.clicked.connect(self._compare_reference)
         self.btn_exam_diff = QPushButton("참고 BRF와 내용 비교…")
         self.btn_exam_diff.clicked.connect(self._exam_content_diff)
-        self.btn_nav = QPushButton("계층 탐색기…")
-        self.btn_nav.clicked.connect(self._open_navigator)
         row.addWidget(self.btn_compare)
         row.addWidget(self.btn_exam_diff)
-        row.addWidget(self.btn_nav)
         row.addStretch(1)
         right.addLayout(row)
 
@@ -117,7 +113,6 @@ class ConversionPreviewDialog(QDialog):
         )
         if not path:
             return
-        # 생성본 앞부분만 (참고와 면 수가 크게 다를 수 있음)
         page_limit = max(1, len(self.result.braille_document.pages))
         cmp = compare_to_reference_file(
             self.result.brf_text,
@@ -144,8 +139,3 @@ class ConversionPreviewDialog(QDialog):
         text = self.side.toPlainText()
         text += "\n\n" + report.summary(max_items=10)
         self.side.setPlainText(text)
-
-    def _open_navigator(self) -> None:
-        from korean_exam_braille.app.ui.nav.dialog import NavigatorDialog
-
-        NavigatorDialog(self, self.result.exam).exec()

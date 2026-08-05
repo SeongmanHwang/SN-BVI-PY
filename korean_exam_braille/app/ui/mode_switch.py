@@ -3,12 +3,8 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from PySide6.QtWidgets import QApplication, QMainWindow, QWidget
-
-if TYPE_CHECKING:
-    pass
 
 _brf_window: QMainWindow | None = None
 _pdf_window: QMainWindow | None = None

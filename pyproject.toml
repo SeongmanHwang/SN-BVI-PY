@@ -18,6 +18,15 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
+    "httpx>=0.27",
+    "starlette>=0.38",
+    "uvicorn>=0.30",
+    "python-multipart>=0.0.9",
+]
+web = [
+    "starlette>=0.38",
+    "uvicorn>=0.30",
+    "python-multipart>=0.0.9",
 ]
 pdf = [
     "pdfplumber>=0.11",
@@ -28,10 +37,14 @@ pdf = [
 brf-inspector = "korean_exam_braille.app.main:main"
 pdf-viewer = "korean_exam_braille.app.main:main_pdf"
 korean-exam-braille = "korean_exam_braille.app.main:main"
+korean-exam-braille-web = "korean_exam_braille.app.web.server:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["korean_exam_braille*"]
+
+[tool.setuptools.package-data]
+"korean_exam_braille.app.web" = ["static/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

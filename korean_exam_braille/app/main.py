@@ -47,6 +47,7 @@ def main(argv: list[str] | None = None) -> int:
     app.setApplicationName(
         "PDF Structure Viewer" if mode == "pdf" else "BRF Inspector"
     )
+    # 창 제목은 각 Window가 "— 진단" 으로 설정
 
     from korean_exam_braille.app.ui.mode_switch import open_initial
 

@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>국어 시험 PDF 점역 — 사용자 모드</title>
+  <link rel="stylesheet" href="/static/app.css" />
+</head>
+<body>
+  <a class="skip" href="#main">본문으로 건너뛰기</a>
+
+  <header>
+    <h1>국어 시험 PDF 점역</h1>
+    <p class="lede">PDF를 올리면 점자 BRF로 변환합니다. 단계는 위에서 아래 순서입니다.</p>
+  </header>
+
+  <main id="main">
+    <div
+      id="status"
+      class="status"
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+      tabindex="-1"
+    >
+      PDF를 업로드하세요.
+    </div>
+    <div
+      id="alert"
+      class="alert"
+      role="alert"
+      aria-live="assertive"
+      aria-atomic="true"
+      hidden
+    ></div>
+
+    <ol class="steps">
+      <li>
+        <h2>1. PDF 업로드</h2>
+        <p id="upload-help" class="help">국어 문제지 PDF 파일을 선택합니다.</p>
+        <form id="upload-form">
+          <label for="pdf-file">PDF 파일</label>
+          <input
+            id="pdf-file"
+            name="file"
+            type="file"
+            accept=".pdf,application/pdf"
+            aria-describedby="upload-help"
+            required
+          />
+          <button type="submit" id="btn-upload">PDF 업로드</button>
+        </form>
+      </li>
+
+      <li>
+        <h2>2. 분석 및 변환</h2>
+        <p id="convert-help" class="help">업로드한 PDF를 분석하고 점자 BRF를 만듭니다.</p>
+        <button
+          type="button"
+          id="btn-convert"
+          disabled
+          aria-describedby="convert-help convert-why"
+        >
+          분석 및 변환
+        </button>
+        <p id="convert-why" class="why">PDF를 먼저 업로드하세요.</p>
+      </li>
+
+      <li>
+        <h2>3. 결과 받기</h2>
+        <p id="dl-help" class="help">변환이 끝나면 아래 버튼으로 파일을 받습니다.</p>
+        <div class="downloads" role="group" aria-labelledby="dl-heading">
+          <p id="dl-heading" class="visually-hidden">다운로드</p>
+          <a
+            id="btn-brf"
+            class="button"
+            href="/api/download/brf"
+            aria-disabled="true"
+            tabindex="-1"
+            aria-describedby="dl-help brf-why"
+          >변환된 BRF 다운로드</a>
+          <p id="brf-why" class="why">먼저 분석 및 변환을 실행하세요.</p>
+
+          <a
+            id="btn-dtbook"
+            class="button"
+            href="/api/download/dtbook"
+            aria-disabled="true"
+            tabindex="-1"
+            aria-describedby="dl-help dtbook-why"
+          >변환된 DTBook XML 다운로드</a>
+          <p id="dtbook-why" class="why">DTBook XML 다운로드는 아직 준비 중입니다.</p>
+        </div>
+      </li>
+    </ol>
+
+    <p class="dev-note">
+      <a href="/dev">개발자 모드</a>에서 같은 파일을 PDF·BRF·역점역 또는 계층·DTBook으로 진단할 수 있습니다.
+    </p>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

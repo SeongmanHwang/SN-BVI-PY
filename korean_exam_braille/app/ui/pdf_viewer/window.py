@@ -30,13 +30,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from korean_exam_braille.app.brf.models import STRUCTURE_TAGS
-from korean_exam_braille.app.pdf.block_builder import merge_blocks, split_block
-from korean_exam_braille.app.pdf.candidates import detect_block_candidates
-from korean_exam_braille.app.pdf.extractor import extract_pdf, render_page_pixmap
-from korean_exam_braille.app.pdf.io import save_structure
 from korean_exam_braille.app.pdf.models import PdfDocumentStructure, PdfPageStructure
-from korean_exam_braille.app.pdf.reading_order import assign_reading_order, move_block_order
+from korean_exam_braille.app.session import PdfStructureService
 from korean_exam_braille.app.ui import mode_switch
 
 _TAG_COLORS = {
@@ -188,11 +183,10 @@ class PdfCanvas(QGraphicsView):
 class PdfStructureWindow(QMainWindow):
     def __init__(self, initial_path: str | None = None) -> None:
         super().__init__()
-        self.setWindowTitle("PDF Structure Viewer — 수능 국어")
+        self.setWindowTitle("PDF Structure Viewer — 읽기 전용 진단 (레거시)")
         self.resize(1400, 860)
 
-        self.pdf_path: Path | None = None
-        self.document: PdfDocumentStructure | None = None
+        self.service = PdfStructureService()
         self._page_number = 1
         self._render_zoom = 2.0
         self._selected_block_id: str | None = None
@@ -210,14 +204,18 @@ class PdfStructureWindow(QMainWindow):
         if initial_path:
             self.open_path(Path(initial_path))
 
+    @property
+    def document(self) -> PdfDocumentStructure | None:
+        return self.service.document
+
+    @property
+    def pdf_path(self) -> Path | None:
+        return self.service.path
+
     def _build_actions(self) -> None:
         self.act_open = QAction("열기…", self)
         self.act_open.setShortcut(QKeySequence.Open)
         self.act_open.triggered.connect(self.open_file_dialog)
-
-        self.act_save = QAction("구조 저장", self)
-        self.act_save.setShortcut(QKeySequence.Save)
-        self.act_save.triggered.connect(self.save_structure)
 
         self.act_prev = QAction("이전 면", self)
         self.act_prev.setShortcut(QKeySequence.MoveToPreviousPage)
@@ -226,20 +224,6 @@ class PdfStructureWindow(QMainWindow):
         self.act_next = QAction("다음 면", self)
         self.act_next.setShortcut(QKeySequence.MoveToNextPage)
         self.act_next.triggered.connect(self.next_page)
-
-        self.act_merge = QAction("선택 블록 병합", self)
-        self.act_merge.triggered.connect(self.merge_selected)
-
-        self.act_split = QAction("선택 블록 분할(중간)", self)
-        self.act_split.triggered.connect(self.split_selected)
-
-        self.act_accept = QAction("후보→태그 적용", self)
-        self.act_accept.triggered.connect(self.accept_candidates)
-
-        self.act_reorder_up = QAction("읽기순서 ↑", self)
-        self.act_reorder_up.triggered.connect(lambda: self.nudge_order(-1))
-        self.act_reorder_down = QAction("읽기순서 ↓", self)
-        self.act_reorder_down.triggered.connect(lambda: self.nudge_order(1))
 
         self.act_zoom_in = QAction("확대", self)
         self.act_zoom_in.setShortcut(QKeySequence.ZoomIn)
@@ -277,11 +261,6 @@ class PdfStructureWindow(QMainWindow):
     def _build_menu(self) -> None:
         menu_file = self.menuBar().addMenu("파일")
         menu_file.addAction(self.act_open)
-        menu_file.addAction(self.act_save)
-        menu_file.addSeparator()
-        menu_file.addAction(self.act_preview_brf)
-        menu_file.addAction(self.act_exam_diff)
-        menu_file.addAction(self.act_navigate)
 
         menu_view = self.menuBar().addMenu("보기")
         menu_view.addAction(self.act_prev)
@@ -294,43 +273,29 @@ class PdfStructureWindow(QMainWindow):
         menu_view.addSeparator()
         menu_view.addAction(self.act_navigate)
         menu_view.addAction(self.act_preview_brf)
-        menu_view.addAction(self.act_exam_diff)
         menu_view.addAction(self.act_switch_brf)
+
+        menu_tools = self.menuBar().addMenu("도구")
+        menu_tools.addAction(self.act_exam_diff)
 
     def _build_toolbar(self) -> None:
         bar = QToolBar("메인")
         bar.setMovable(False)
         self.addToolBar(bar)
-        for act in (
-            self.act_open,
-            self.act_save,
-            self.act_prev,
-            self.act_next,
-            self.act_zoom_out,
-            self.act_zoom_in,
-            self.act_zoom_fit,
-            self.act_zoom_100,
-            self.act_merge,
-            self.act_split,
-            self.act_accept,
-            self.act_reorder_up,
-            self.act_reorder_down,
-            self.act_preview_brf,
-            self.act_navigate,
-            self.act_switch_brf,
-        ):
-            bar.addAction(act)
-            if act in (
-                self.act_save,
-                self.act_next,
-                self.act_zoom_100,
-                self.act_split,
-                self.act_accept,
-                self.act_reorder_down,
-                self.act_preview_brf,
-                self.act_navigate,
-            ):
-                bar.addSeparator()
+
+        bar.addAction(self.act_open)
+        bar.addSeparator()
+        bar.addAction(self.act_prev)
+        bar.addAction(self.act_next)
+        bar.addSeparator()
+        bar.addAction(self.act_zoom_out)
+        bar.addAction(self.act_zoom_in)
+        bar.addAction(self.act_zoom_fit)
+        bar.addSeparator()
+        bar.addAction(self.act_preview_brf)
+        bar.addAction(self.act_navigate)
+        bar.addAction(self.act_switch_brf)
+        bar.addSeparator()
 
         self.zoom_label = QLabel(" 100% ")
         self.zoom_label.setMinimumWidth(56)
@@ -367,14 +332,14 @@ class PdfStructureWindow(QMainWindow):
 
         right = QWidget()
         right_layout = QVBoxLayout(right)
-        right_layout.addWidget(QLabel("블록 / 읽기 순서 / 태그"))
+        right_layout.addWidget(QLabel("블록 (읽기 전용 · 태그 진단)"))
 
         self.table = QTableWidget(0, 5)
         self.table.setHorizontalHeaderLabels(["순서", "후보", "태그", "주석", "미리보기"])
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self.table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table.itemSelectionChanged.connect(self._on_table_selection)
-        self.table.itemChanged.connect(self._on_item_changed)
         self.table.horizontalHeader().setStretchLastSection(True)
         right_layout.addWidget(self.table)
 
@@ -422,10 +387,6 @@ class PdfStructureWindow(QMainWindow):
             self.nav_dock.hide()
         self.act_navigate.setChecked(self.nav_dock.isVisible())
 
-    def open_hierarchy_navigator(self) -> None:
-        """하위 호환: 패널 표시."""
-        self.toggle_hierarchy_navigator(True)
-
     def _on_nav_dock_visibility(self, visible: bool) -> None:
         self.act_navigate.setChecked(visible)
         if visible and self.document:
@@ -435,11 +396,7 @@ class PdfStructureWindow(QMainWindow):
         if not self.document:
             self.nav_panel.clear()
             return
-        from korean_exam_braille.app.exam.builder import RuleExamStructureBuilder
-        from korean_exam_braille.app.nav import TreeExamNavigator
-
-        exam = RuleExamStructureBuilder().build(self.document)
-        nav = TreeExamNavigator()
+        nav, exam = self.service.create_navigator()
         self.nav_panel.bind(nav, exam)
         if not self._nav_shortcuts_installed:
             self.nav_panel.install_window_shortcuts(self)
@@ -467,7 +424,6 @@ class PdfStructureWindow(QMainWindow):
         if not self.document:
             QMessageBox.information(self, "변환 미리보기", "먼저 PDF를 여세요.")
             return
-        from korean_exam_braille.app.pipeline import default_pipeline
         from korean_exam_braille.app.ui.pdf_viewer.preview_dialog import (
             ConversionPreviewDialog,
         )
@@ -475,7 +431,7 @@ class PdfStructureWindow(QMainWindow):
         self.statusBar().showMessage("BRF 변환 중…")
         QApplication.processEvents()
         try:
-            result = default_pipeline().run_document(self.document)
+            result = self.service.convert()
         except Exception as exc:  # noqa: BLE001
             QMessageBox.critical(self, "변환 실패", str(exc))
             self.statusBar().showMessage("변환 실패")
@@ -513,14 +469,10 @@ class PdfStructureWindow(QMainWindow):
 
         from PySide6.QtWidgets import QDialog, QDialogButtonBox, QPlainTextEdit
 
-        from korean_exam_braille.app.brf.exam_diff import compare_exam_content
-        from korean_exam_braille.app.pipeline import default_pipeline
-
         self.statusBar().showMessage("변환·내용 비교 중…")
         QApplication.processEvents()
         try:
-            result = default_pipeline().run_document(self.document)
-            report = compare_exam_content(result.brf_text, Path(path))
+            report = self.service.compare_content(path)
         except Exception as exc:  # noqa: BLE001
             QMessageBox.critical(self, "내용 비교 실패", str(exc))
             self.statusBar().showMessage("내용 비교 실패")
@@ -558,18 +510,15 @@ class PdfStructureWindow(QMainWindow):
             mode_switch.switch_to_brf(from_window=self, path=path)
             return
         try:
-            self.document = extract_pdf(path)
+            self.service.open(path)
         except Exception as exc:  # noqa: BLE001
             QMessageBox.critical(self, "열기 실패", str(exc))
             return
-        self.pdf_path = path
         self._page_number = self.document.pages[0].page_number if self.document.pages else 1
         self._keep_view_on_refresh = False
         self._rebuild_page_combo()
         self.refresh_view()
-        layout = (self.document.metadata or {}).get("layout_profile") or {}
-        cut = layout.get("column_cut_x")
-        extra = f" · cut={cut:.0f}" if isinstance(cut, (int, float)) else ""
+        extra = self.service.layout_status_extra()
         self.statusBar().showMessage(
             f"열림: {path.name} · {self.document.page_count}면 · "
             f"추출 {len(self.document.pages)}면{extra}"
@@ -578,14 +527,6 @@ class PdfStructureWindow(QMainWindow):
             self._ensure_nav_bound()
         else:
             self.nav_panel.clear()
-
-    def save_structure(self) -> None:
-        if not self.document or not self.pdf_path:
-            QMessageBox.information(self, "저장", "먼저 PDF를 여세요.")
-            return
-        self._flush_table()
-        path = save_structure(self.document)
-        self.statusBar().showMessage(f"구조 저장: {path}")
 
     def prev_page(self) -> None:
         if not self.document:
@@ -644,9 +585,7 @@ class PdfStructureWindow(QMainWindow):
         page = self.current_page()
         if not page or not self.pdf_path:
             return
-        png = render_page_pixmap(
-            self.pdf_path, page.page_number, zoom=self._render_zoom
-        )
+        png = self.service.render_page(page.page_number, zoom=self._render_zoom)
         self.canvas.set_page_image(
             png,
             page.height,
@@ -685,8 +624,7 @@ class PdfStructureWindow(QMainWindow):
             for col, value in enumerate(values):
                 item = QTableWidgetItem(value)
                 item.setData(Qt.ItemDataRole.UserRole, block.id)
-                if col in (0, 1, 4):
-                    item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 self.table.setItem(row, col, item)
         self._updating = False
 
@@ -760,114 +698,6 @@ class PdfStructureWindow(QMainWindow):
         ids = self._selected_block_ids()
         if ids:
             self.select_block(ids[0])
-    def _on_item_changed(self, item: QTableWidgetItem) -> None:
-        if self._updating:
-            return
-        page = self.current_page()
-        if not page:
-            return
-        block_id = item.data(Qt.ItemDataRole.UserRole)
-        block = next((b for b in page.blocks if b.id == block_id), None)
-        if not block:
-            return
-        if item.column() == 2:
-            tags = [t.strip() for t in item.text().split(",") if t.strip()]
-            unknown = [t for t in tags if t not in STRUCTURE_TAGS]
-            block.tags = tags
-            if unknown:
-                self.statusBar().showMessage(f"사용자 태그: {', '.join(unknown)}")
-        elif item.column() == 3:
-            note = item.text().strip()
-            block.notes = note or None
-
-    def _flush_table(self) -> None:
-        page = self.current_page()
-        if not page:
-            return
-        for row in range(self.table.rowCount()):
-            id_item = self.table.item(row, 0)
-            tag_item = self.table.item(row, 2)
-            note_item = self.table.item(row, 3)
-            if not id_item:
-                continue
-            block_id = id_item.data(Qt.ItemDataRole.UserRole)
-            block = next((b for b in page.blocks if b.id == block_id), None)
-            if not block:
-                continue
-            if tag_item:
-                block.tags = [t.strip() for t in tag_item.text().split(",") if t.strip()]
-            if note_item:
-                note = note_item.text().strip()
-                block.notes = note or None
-
-    def accept_candidates(self) -> None:
-        page = self.current_page()
-        if not page:
-            return
-        for block in page.blocks:
-            if block.candidate_tags and not block.tags:
-                block.tags = list(block.candidate_tags)
-        self.refresh_view()
-        self.statusBar().showMessage("후보 태그를 적용했습니다.")
-
-    def merge_selected(self) -> None:
-        page = self.current_page()
-        if not page:
-            return
-        ids = self._selected_block_ids()
-        if len(ids) != 2:
-            QMessageBox.information(self, "병합", "블록을 정확히 2개 선택하세요.")
-            return
-        try:
-            page.blocks = merge_blocks(page.blocks, ids[0], ids[1])
-            for block in page.blocks:
-                block.candidate_tags = detect_block_candidates(block.text)
-            assign_reading_order(page.blocks)
-        except Exception as exc:  # noqa: BLE001
-            QMessageBox.warning(self, "병합 실패", str(exc))
-            return
-        self.refresh_view()
-
-    def split_selected(self) -> None:
-        page = self.current_page()
-        if not page:
-            return
-        ids = self._selected_block_ids()
-        if len(ids) != 1:
-            QMessageBox.information(self, "분할", "블록을 하나 선택하세요.")
-            return
-        block = next(b for b in page.blocks if b.id == ids[0])
-        if len(block.line_ids) < 2:
-            QMessageBox.information(self, "분할", "행이 2개 이상인 블록만 분할할 수 있습니다.")
-            return
-        mid = block.line_ids[len(block.line_ids) // 2 - 1]
-        try:
-            left, right = split_block(block, page.lines, mid)
-        except Exception as exc:  # noqa: BLE001
-            QMessageBox.warning(self, "분할 실패", str(exc))
-            return
-        new_blocks = []
-        for b in page.blocks:
-            if b.id == block.id:
-                new_blocks.append(left)
-                new_blocks.append(right)
-            else:
-                new_blocks.append(b)
-        for b in new_blocks:
-            b.candidate_tags = detect_block_candidates(b.text)
-        page.blocks = assign_reading_order(new_blocks)
-        self.refresh_view()
-
-    def nudge_order(self, delta: int) -> None:
-        page = self.current_page()
-        if not page or not self._selected_block_id:
-            return
-        block = next((b for b in page.blocks if b.id == self._selected_block_id), None)
-        if not block:
-            return
-        page.blocks = move_block_order(page.blocks, block.id, block.reading_order + delta)
-        self.refresh_view()
-        self.select_block(block.id)
 
     def closeEvent(self, event) -> None:  # noqa: N802
         if mode_switch.handle_close(self):
