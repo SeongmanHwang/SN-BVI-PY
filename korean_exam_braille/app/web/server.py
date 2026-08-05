@@ -170,6 +170,47 @@ def create_app(*, workspace: ConversionWorkspace | None = None) -> Starlette:
             )
         return Response(png, media_type="image/png")
 
+    async def api_dev_reference_brf(request: Request) -> JSONResponse:
+        form = await request.form()
+        upload = form.get("file")
+        if upload is None:
+            return JSONResponse(
+                {"ok": False, "message": "BRF 파일이 없습니다."},
+                status_code=400,
+            )
+        filename = getattr(upload, "filename", None) or "reference.brf"
+        data = await upload.read()  # type: ignore[union-attr]
+        try:
+            meta = ws.load_reference_brf_bytes(data, filename=str(filename))
+        except Exception as exc:  # noqa: BLE001
+            return JSONResponse(
+                {"ok": False, "message": f"참고 BRF를 열 수 없습니다. {exc}"},
+                status_code=400,
+            )
+        return JSONResponse(
+            {
+                "ok": True,
+                "message": (
+                    f"참고 BRF {meta['name']}을(를) 올렸습니다. "
+                    f"{meta['pages']}면 · {meta['lines']}행."
+                ),
+                "meta": meta,
+                "status": ws.status_snapshot(),
+            }
+        )
+
+    async def api_dev_review(_request: Request) -> JSONResponse:
+        try:
+            bundle = ws.review_bundle()
+        except ValueError as exc:
+            return JSONResponse({"ok": False, "message": str(exc)}, status_code=400)
+        except Exception as exc:  # noqa: BLE001
+            return JSONResponse(
+                {"ok": False, "message": f"검토 데이터를 만들 수 없습니다. {exc}"},
+                status_code=500,
+            )
+        return JSONResponse({"ok": True, **bundle})
+
     routes = [
         Route("/", index),
         Route("/dev", developer_page),
@@ -180,6 +221,8 @@ def create_app(*, workspace: ConversionWorkspace | None = None) -> Starlette:
         Route("/api/download/dtbook", api_download_dtbook),
         Route("/api/dev/bundle", api_dev_bundle),
         Route("/api/dev/pdf-page/{page:int}", api_dev_pdf_page),
+        Route("/api/dev/reference-brf", api_dev_reference_brf, methods=["POST"]),
+        Route("/api/dev/review", api_dev_review),
         Mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static"),
     ]
     app = Starlette(routes=routes)

@@ -94,3 +94,56 @@ def test_developer_bundle_and_page(client, tiny_pdf_bytes: bytes):
     assert png.status_code == 200
     assert png.headers["content-type"].startswith("image/png")
     assert len(png.content) > 100
+
+
+def test_developer_review_mode_reference_brf(client, tiny_pdf_bytes: bytes):
+    client.post(
+        "/api/upload",
+        files={"file": ("sample.pdf", tiny_pdf_bytes, "application/pdf")},
+    )
+    client.post("/api/convert")
+    brf = client.get("/api/download/brf")
+    assert brf.status_code == 200
+    generated = brf.content
+
+    # 참고본: 첫 비공백 행을 살짝 바꿈
+    text = generated.decode("utf-8", errors="replace")
+    lines = text.splitlines(keepends=True)
+    tweaked = []
+    changed = False
+    for line in lines:
+        if not changed and line.strip() and "\x0c" not in line:
+            tweaked.append(("X" + line[1:]) if len(line) > 1 else "X\n")
+            changed = True
+        else:
+            tweaked.append(line)
+    reference = "".join(tweaked).encode("utf-8")
+
+    missing = client.get("/api/dev/review")
+    assert missing.status_code == 400
+
+    up = client.post(
+        "/api/dev/reference-brf",
+        files={"file": ("vendor.brf", reference, "text/plain")},
+    )
+    assert up.status_code == 200
+    assert up.json()["ok"] is True
+    assert up.json()["status"]["has_reference_brf"] is True
+
+    review = client.get("/api/dev/review")
+    assert review.status_code == 200
+    body = review.json()
+    assert body["ok"] is True
+    assert body["reference_name"] == "vendor.brf"
+    assert body["review_pages"]
+    page0 = body["review_pages"][0]
+    assert "generated" in page0 and "reference" in page0
+    assert "unicode_lines" in page0["generated"]
+    assert "mismatch" in page0["generated"]["unicode_lines"][0]
+    assert "compare" in body
+    assert "cell_match_ratio" in body["compare"]
+
+    # UI에 모드 C 진입점
+    dev = client.get("/dev")
+    assert "모드 C" in dev.text
+    assert "review-gen-braille" in dev.text

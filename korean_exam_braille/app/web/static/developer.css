@@ -309,3 +309,53 @@ body.is-resizing {
   cursor: pointer;
   color: var(--muted);
 }
+
+.panels-c {
+  min-height: 65vh;
+}
+
+.review-view {
+  font-variant-ligatures: none;
+}
+
+.review-view .diff {
+  background: rgba(255, 214, 64, 0.55);
+  color: inherit;
+  border-radius: 0.1rem;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+#review-summary {
+  margin: 0.75rem 1.25rem 1.5rem;
+  max-width: min(1600px, 100%);
+  margin-left: auto;
+  margin-right: auto;
+}
+
+#ref-brf-box .help {
+  display: block;
+  margin: 0.25rem 0 0;
+  max-width: 18rem;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+#ref-brf-box input[type="file"] {
+  max-width: 16rem;
+}
+
+@media (max-width: 1200px) {
+  .panels-c {
+    flex-wrap: wrap;
+  }
+
+  .panels-c .panel {
+    flex: 1 1 calc(50% - 1rem) !important;
+    min-width: 12rem !important;
+  }
+
+  .panels-c .splitter {
+    display: none;
+  }
+}

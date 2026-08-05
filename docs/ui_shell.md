@@ -30,8 +30,9 @@
 |------|------|
 | A | 원문 PDF(읽기 전용) · BRF · 역점역 |
 | B | 원문 PDF(읽기 전용) · 구조 계층 · **DTBook XML** |
+| C | **생성 BRF** · **참고 BRF**(업로드) · 각각의 점자·역점역. 행 정렬 후 **불일치 글자만** 음영 |
 
-구현 스택: 웹 `/dev` — 모드 A/B 패널. PDF는 읽기 전용(이미지+추출 텍스트).
+구현 스택: 웹 `/dev` — 모드 A/B/C 패널. PDF는 읽기 전용(이미지+추출 텍스트). 모드 C는 `POST /api/dev/reference-brf` + `GET /api/dev/review`.
 
 ### 0.3 변환 상태·오류 안내 (접근성) — 확정
 
@@ -69,7 +70,8 @@ pdf · exam · braille · layout · brf · nav
 | `default_pipeline()` / `PipelineResult` | `pipeline` | 워크스페이스가 감쌈 |
 | `DtbookExporter` | `daisy.ports` | Exam → DTBook 2005-3 XML (`ExamDtbookExporter`) |
 | `ExamNavigator` + `NavLocation` | `nav` | 개발자 모드 B 계층 패널 |
-| `brf` reverse / compare | `brf/*` | 개발자 모드 A 역점역·비교 |
+| `brf` reverse / compare | `brf/*` | 개발자 모드 A 역점역 · 모드 C 비교 |
+| `session.review` | `session/review.py` | 모드 C 면·행 불일치 마스크 |
 
 ### `ConversionWorkspace` 요약
 
@@ -97,7 +99,7 @@ exam_document / source_path
 
 | UI | 상태 |
 |----|------|
-| `web/` 사용자·개발자 모드 | `/` 업로드·변환·다운로드 · `/dev` 모드 A/B 진단 패널 |
+| `web/` 사용자·개발자 모드 | `/` 업로드·변환·다운로드 · `/dev` 모드 A/B/C 진단 패널 |
 | `PdfStructureWindow` | 레거시 **읽기 전용** (병합·분할·태그·저장 메뉴 제거) |
 | `BrfInspectorWindow` | 레거시 **읽기 전용** (태그 저장·후보 적용 제거) |
 

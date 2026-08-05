@@ -31,6 +31,8 @@ class ConversionWorkspace:
     last_result: PipelineResult | None = None
     last_dtbook_xml: str | None = None
     source_name: str | None = None
+    reference_brf_text: str | None = None
+    reference_name: str | None = None
 
     def load_pdf(self, path: str | Path) -> dict[str, object]:
         path = Path(path)
@@ -38,6 +40,8 @@ class ConversionWorkspace:
         self.source_name = path.name
         self.last_result = None
         self.last_dtbook_xml = None
+        self.reference_brf_text = None
+        self.reference_name = None
         doc = self.service.require_document()
         return {
             "name": path.name,
@@ -130,35 +134,48 @@ class ConversionWorkspace:
         """생성 BRF 전체 역점역 (면 구분 유지)."""
         return "\n\n".join(str(p["reverse"]) for p in self.braille_pages_view())
 
+    @property
+    def has_reference_brf(self) -> bool:
+        return bool(self.reference_brf_text)
+
+    def load_reference_brf_bytes(
+        self, data: bytes, *, filename: str = "reference.brf"
+    ) -> dict[str, object]:
+        text = data.decode("utf-8", errors="replace")
+        if not text.strip():
+            raise ValueError("빈 BRF 파일입니다.")
+        self.reference_brf_text = text
+        self.reference_name = Path(filename).name or "reference.brf"
+        from korean_exam_braille.app.session.review import brf_text_to_display_pages
+
+        pages = brf_text_to_display_pages(text)
+        return {
+            "name": self.reference_name,
+            "pages": len(pages),
+            "lines": sum(len(p["unicode_lines"]) for p in pages),  # type: ignore[arg-type]
+        }
+
     def braille_pages_view(self) -> list[dict[str, object]]:
         """점자 면별 유니코드 점자·역점역 (ASCII는 넣지 않음)."""
-        from korean_exam_braille.app.brf.ascii_braille import ascii_to_unicode
-        from korean_exam_braille.app.brf.reverse_translator import reverse_translate_line
+        from korean_exam_braille.app.session.review import brf_text_to_display_pages
 
-        brf = self.brf_text()
-        pages: list[dict[str, object]] = []
-        for index, page in enumerate(brf.split("\x0c"), start=1):
-            raw_lines = page.splitlines()
-            # 끝 빈 면 스킵
-            if not any(line.strip() for line in raw_lines):
-                continue
-            uni_lines: list[str] = []
-            rev_lines: list[str] = []
-            for line in raw_lines:
-                if line.strip() == "":
-                    uni_lines.append("")
-                    rev_lines.append("")
-                else:
-                    uni_lines.append(ascii_to_unicode(line))
-                    rev_lines.append(reverse_translate_line(line))
-            pages.append(
-                {
-                    "index": index,
-                    "unicode": "\n".join(uni_lines),
-                    "reverse": "\n".join(rev_lines),
-                }
-            )
-        return pages
+        return brf_text_to_display_pages(self.brf_text())
+
+    def review_bundle(self) -> dict[str, object]:
+        """생성 BRF ↔ 참고 BRF 검토 스냅샷."""
+        if not self.has_pdf:
+            raise ValueError("PDF를 먼저 업로드하세요.")
+        self.ensure_converted()
+        if not self.reference_brf_text:
+            raise ValueError("참고 BRF를 먼저 업로드하세요.")
+        from korean_exam_braille.app.session.review import build_review_pages
+
+        built = build_review_pages(self.brf_text(), self.reference_brf_text)
+        return {
+            "status": self.status_snapshot(),
+            "reference_name": self.reference_name,
+            **built,
+        }
 
     def exam_tree_text(self) -> str:
         exam = self.exam_document()
@@ -237,6 +254,8 @@ class ConversionWorkspace:
             "source_name": self.source_name,
             "has_brf": self.has_brf,
             "dtbook_download_available": self.dtbook_download_available,
+            "has_reference_brf": self.has_reference_brf,
+            "reference_name": self.reference_name,
             "warnings": list(self.last_result.warnings) if self.last_result else [],
             "brf_pages": (
                 len(self.last_result.braille_document.pages) if self.last_result else 0
