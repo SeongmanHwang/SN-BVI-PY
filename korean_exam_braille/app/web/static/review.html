@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>검토 모드 — 국어 시험 PDF 점역</title>
+  <link rel="stylesheet" href="/static/app.css" />
+  <link rel="stylesheet" href="/static/review.css" />
+</head>
+<body class="review-body">
+  <a class="skip" href="#main">본문으로 건너뛰기</a>
+
+  <header class="review-header">
+    <p class="nav-trail">
+      <a href="/">사용자 모드</a>
+      <span aria-hidden="true"> · </span>
+      <a href="/dev">개발자 모드</a>
+      <span aria-hidden="true"> · </span>
+      <span>검토 모드</span>
+    </p>
+    <h1>검토 모드</h1>
+    <p class="lede">
+      생성 BRF의 <strong>면</strong>마다, 아직 쓰이지 않은 참고 BRF 구간에서
+      최장 일치 문자열을 찾아 같은 내용 길이의 창을 짝짓습니다.
+      비교 시 공백·줄바꿈은 무시합니다.
+      겹치는 참고 구간과 어느 면에도 안 들어간 누락 구간은 비교에서 빼 둡니다.
+    </p>
+
+    <div
+      id="status"
+      class="status"
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+      tabindex="-1"
+    >
+      생성 BRF와 참고 BRF를 올리세요.
+    </div>
+    <div
+      id="alert"
+      class="alert"
+      role="alert"
+      aria-live="assertive"
+      aria-atomic="true"
+      hidden
+    ></div>
+
+    <div id="progress-wrap" class="progress-wrap" hidden>
+      <div
+        id="progress-bar"
+        class="progress-bar"
+        role="progressbar"
+        aria-valuemin="0"
+        aria-valuemax="100"
+        aria-valuenow="0"
+        aria-labelledby="progress-label"
+      >
+        <div id="progress-fill" class="progress-fill"></div>
+      </div>
+      <p id="progress-label" class="progress-label">비교 준비 중…</p>
+    </div>
+
+    <div class="review-uploads" role="group" aria-label="BRF 업로드">
+      <div class="upload-card">
+        <label for="gen-brf-file">생성 BRF</label>
+        <input
+          id="gen-brf-file"
+          type="file"
+          accept=".brf,.BRF,text/plain"
+          aria-describedby="gen-brf-help"
+        />
+        <p id="gen-brf-help" class="help">
+          비교할 생성본입니다. 사용자 모드에서 이미 변환했다면 그 결과를 쓸 수도 있습니다.
+        </p>
+        <p id="gen-brf-name" class="file-name"></p>
+      </div>
+      <div class="upload-card">
+        <label for="ref-brf-file">참고 BRF</label>
+        <input
+          id="ref-brf-file"
+          type="file"
+          accept=".brf,.BRF,text/plain"
+          aria-describedby="ref-brf-help"
+        />
+        <p id="ref-brf-help" class="help">시각장애용 참고(벤더) BRF입니다.</p>
+        <p id="ref-brf-name" class="file-name"></p>
+      </div>
+      <button type="button" id="btn-compare">비교하기</button>
+    </div>
+    <div class="page-nav" role="group" aria-label="생성 BRF 면 선택">
+      <label for="page-select">생성 면</label>
+      <select id="page-select" disabled></select>
+      <span id="page-meta" class="file-name"></span>
+    </div>
+  </header>
+
+  <main id="main">
+    <p id="review-summary" class="help review-summary" aria-live="polite"></p>
+
+    <section class="review-grid" aria-label="생성 면과 짝지은 참고 구간">
+      <article class="panel" aria-labelledby="gen-brl-h">
+        <h2 id="gen-brl-h">생성 점자</h2>
+        <div id="review-gen-braille" class="panel-pre braille-pre review-view" tabindex="0" lang="und"></div>
+      </article>
+      <article class="panel" aria-labelledby="ref-brl-h">
+        <h2 id="ref-brl-h">참고 점자</h2>
+        <div id="review-ref-braille" class="panel-pre braille-pre review-view" tabindex="0" lang="und"></div>
+      </article>
+      <article class="panel" aria-labelledby="gen-rev-h">
+        <h2 id="gen-rev-h">생성 역점역</h2>
+        <div id="review-gen-reverse" class="panel-pre review-view" tabindex="0"></div>
+      </article>
+      <article class="panel" aria-labelledby="ref-rev-h">
+        <h2 id="ref-rev-h">참고 역점역</h2>
+        <div id="review-ref-reverse" class="panel-pre review-view" tabindex="0"></div>
+      </article>
+    </section>
+  </main>
+
+  <script src="/static/review.js"></script>
+</body>
+</html>

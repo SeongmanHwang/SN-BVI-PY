@@ -31,6 +31,8 @@ class ConversionWorkspace:
     last_result: PipelineResult | None = None
     last_dtbook_xml: str | None = None
     source_name: str | None = None
+    generated_brf_text: str | None = None
+    generated_name: str | None = None
     reference_brf_text: str | None = None
     reference_name: str | None = None
 
@@ -40,6 +42,8 @@ class ConversionWorkspace:
         self.source_name = path.name
         self.last_result = None
         self.last_dtbook_xml = None
+        self.generated_brf_text = None
+        self.generated_name = None
         self.reference_brf_text = None
         self.reference_name = None
         doc = self.service.require_document()
@@ -135,8 +139,32 @@ class ConversionWorkspace:
         return "\n\n".join(str(p["reverse"]) for p in self.braille_pages_view())
 
     @property
+    def has_generated_brf(self) -> bool:
+        return bool(self.generated_brf_text) or self.has_brf
+
+    @property
     def has_reference_brf(self) -> bool:
         return bool(self.reference_brf_text)
+
+    def _brf_meta(self, text: str, name: str) -> dict[str, object]:
+        from korean_exam_braille.app.session.review import brf_text_to_display_pages
+
+        pages = brf_text_to_display_pages(text)
+        return {
+            "name": name,
+            "pages": len(pages),
+            "lines": sum(len(p["unicode_lines"]) for p in pages),  # type: ignore[arg-type]
+        }
+
+    def load_generated_brf_bytes(
+        self, data: bytes, *, filename: str = "generated.brf"
+    ) -> dict[str, object]:
+        text = data.decode("utf-8", errors="replace")
+        if not text.strip():
+            raise ValueError("빈 BRF 파일입니다.")
+        self.generated_brf_text = text
+        self.generated_name = Path(filename).name or "generated.brf"
+        return self._brf_meta(text, self.generated_name)
 
     def load_reference_brf_bytes(
         self, data: bytes, *, filename: str = "reference.brf"
@@ -146,14 +174,17 @@ class ConversionWorkspace:
             raise ValueError("빈 BRF 파일입니다.")
         self.reference_brf_text = text
         self.reference_name = Path(filename).name or "reference.brf"
-        from korean_exam_braille.app.session.review import brf_text_to_display_pages
+        return self._brf_meta(text, self.reference_name)
 
-        pages = brf_text_to_display_pages(text)
-        return {
-            "name": self.reference_name,
-            "pages": len(pages),
-            "lines": sum(len(p["unicode_lines"]) for p in pages),  # type: ignore[arg-type]
-        }
+    def review_generated_brf_text(self) -> str:
+        """검토용 생성측 BRF — 업로드본 우선, 없으면 변환 결과."""
+        if self.generated_brf_text:
+            return self.generated_brf_text
+        if self.has_brf:
+            return self.brf_text()
+        raise ValueError(
+            "생성 BRF를 업로드하거나 사용자 모드에서 PDF를 변환하세요."
+        )
 
     def braille_pages_view(self) -> list[dict[str, object]]:
         """점자 면별 유니코드 점자·역점역 (ASCII는 넣지 않음)."""
@@ -161,18 +192,28 @@ class ConversionWorkspace:
 
         return brf_text_to_display_pages(self.brf_text())
 
-    def review_bundle(self) -> dict[str, object]:
-        """생성 BRF ↔ 참고 BRF 검토 스냅샷."""
-        if not self.has_pdf:
-            raise ValueError("PDF를 먼저 업로드하세요.")
-        self.ensure_converted()
+    def review_bundle(
+        self,
+        *,
+        on_progress=None,
+    ) -> dict[str, object]:
+        """생성 BRF ↔ 참고 BRF 검토 스냅샷 (생성 면 기준 창 배정)."""
+        generated = self.review_generated_brf_text()
         if not self.reference_brf_text:
             raise ValueError("참고 BRF를 먼저 업로드하세요.")
         from korean_exam_braille.app.session.review import build_review_pages
 
-        built = build_review_pages(self.brf_text(), self.reference_brf_text)
+        built = build_review_pages(
+            generated,
+            self.reference_brf_text,
+            on_progress=on_progress,
+        )
+        gen_name = self.generated_name
+        if not gen_name and self.has_brf:
+            gen_name = (self.source_name or "exam").rsplit(".", 1)[0] + ".brf"
         return {
             "status": self.status_snapshot(),
+            "generated_name": gen_name or "generated.brf",
             "reference_name": self.reference_name,
             **built,
         }
@@ -254,6 +295,13 @@ class ConversionWorkspace:
             "source_name": self.source_name,
             "has_brf": self.has_brf,
             "dtbook_download_available": self.dtbook_download_available,
+            "has_generated_brf": self.has_generated_brf,
+            "generated_name": self.generated_name
+            or (
+                (self.source_name or "exam").rsplit(".", 1)[0] + ".brf"
+                if self.has_brf
+                else None
+            ),
             "has_reference_brf": self.has_reference_brf,
             "reference_name": self.reference_name,
             "warnings": list(self.last_result.warnings) if self.last_result else [],

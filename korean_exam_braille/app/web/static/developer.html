@@ -15,6 +15,8 @@
       <a href="/">사용자 모드</a>
       <span aria-hidden="true"> · </span>
       <span>개발자 모드</span>
+      <span aria-hidden="true"> · </span>
+      <a href="/review">검토 모드</a>
     </p>
     <h1>개발자 모드</h1>
     <p class="lede">
@@ -48,23 +50,10 @@
         <button type="button" id="mode-b" class="mode-btn" aria-pressed="false">
           모드 B — PDF · 계층 · DTBook
         </button>
-        <button type="button" id="mode-c" class="mode-btn" aria-pressed="false">
-          모드 C — 생성·참고 BRF 검토
-        </button>
       </div>
       <div class="page-nav" role="group" aria-label="면 선택">
         <label for="page-select">면</label>
         <select id="page-select" disabled></select>
-      </div>
-      <div id="ref-brf-box" class="page-nav" hidden>
-        <label for="ref-brf-file">참고 BRF</label>
-        <input
-          id="ref-brf-file"
-          type="file"
-          accept=".brf,.BRF,text/plain"
-          aria-describedby="ref-brf-help"
-        />
-        <p id="ref-brf-help" class="help">시각장애용 참고 BRF를 올리면 생성본과 비교합니다.</p>
       </div>
       <button type="button" id="btn-reload">다시 불러오기</button>
     </div>
@@ -154,30 +143,6 @@
         <pre id="dtbook-xml" class="panel-pre" tabindex="0"></pre>
       </article>
     </section>
-
-    <section id="panels-c" class="panels panels-c" hidden aria-label="모드 C 검토 패널" aria-hidden="true">
-      <article class="panel" data-panel="c-gen-brl" aria-labelledby="c-gen-brl-h" style="flex: 1 1 0;">
-        <h2 id="c-gen-brl-h">생성 점자</h2>
-        <div id="review-gen-braille" class="panel-pre braille-pre review-view" tabindex="0" lang="und"></div>
-      </article>
-      <div class="splitter" role="separator" aria-orientation="vertical" aria-label="생성·참고 점자 너비 조절" tabindex="0"></div>
-      <article class="panel" data-panel="c-ref-brl" aria-labelledby="c-ref-brl-h" style="flex: 1 1 0;">
-        <h2 id="c-ref-brl-h">참고 점자</h2>
-        <div id="review-ref-braille" class="panel-pre braille-pre review-view" tabindex="0" lang="und"></div>
-      </article>
-      <div class="splitter" role="separator" aria-orientation="vertical" aria-label="점자·역점역 너비 조절" tabindex="0"></div>
-      <article class="panel" data-panel="c-gen-rev" aria-labelledby="c-gen-rev-h" style="flex: 1 1 0;">
-        <h2 id="c-gen-rev-h">생성 역점역</h2>
-        <div id="review-gen-reverse" class="panel-pre review-view" tabindex="0"></div>
-      </article>
-      <div class="splitter" role="separator" aria-orientation="vertical" aria-label="생성·참고 역점역 너비 조절" tabindex="0"></div>
-      <article class="panel" data-panel="c-ref-rev" aria-labelledby="c-ref-rev-h" style="flex: 1 1 0;">
-        <h2 id="c-ref-rev-h">참고 역점역</h2>
-        <div id="review-ref-reverse" class="panel-pre review-view" tabindex="0"></div>
-      </article>
-    </section>
-
-    <p id="review-summary" class="help" aria-live="polite"></p>
 
     <div id="pdf-cache" class="visually-hidden" aria-hidden="true"></div>
   </main>

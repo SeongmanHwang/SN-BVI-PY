@@ -3,15 +3,10 @@
   const alertEl = document.getElementById("alert");
   const modeABtn = document.getElementById("mode-a");
   const modeBBtn = document.getElementById("mode-b");
-  const modeCBtn = document.getElementById("mode-c");
   const panelsA = document.getElementById("panels-a");
   const panelsB = document.getElementById("panels-b");
-  const panelsC = document.getElementById("panels-c");
   const pageSelect = document.getElementById("page-select");
   const btnReload = document.getElementById("btn-reload");
-  const refBrfBox = document.getElementById("ref-brf-box");
-  const refBrfFile = document.getElementById("ref-brf-file");
-  const reviewSummary = document.getElementById("review-summary");
   const pdfCacheEl = document.getElementById("pdf-cache");
   const pdfImgA = document.getElementById("pdf-img-a");
   const pdfImgB = document.getElementById("pdf-img-b");
@@ -20,13 +15,6 @@
   const examTreeEl = document.getElementById("exam-tree");
   const btnExpandAll = document.getElementById("btn-expand-all");
   const btnCollapseAll = document.getElementById("btn-collapse-all");
-
-  const reviewEls = {
-    genBraille: document.getElementById("review-gen-braille"),
-    refBraille: document.getElementById("review-ref-braille"),
-    genReverse: document.getElementById("review-gen-reverse"),
-    refReverse: document.getElementById("review-ref-reverse"),
-  };
 
   /** @type {{
    *   pdfPages: Array<object>,
@@ -39,13 +27,6 @@
    *   warnings: Array<string>,
    * } | null} */
   let cache = null;
-  /** @type {{
-   *   reviewPages: Array<object>,
-   *   compare: object|null,
-   *   referenceName: string,
-   *   pageIndex: number,
-   * } | null} */
-  let review = null;
   let mode = "a";
   const DEFAULT_EXPAND_DEPTH = 1;
 
@@ -64,39 +45,16 @@
   function setMode(next) {
     mode = next;
     const isA = next === "a";
-    const isB = next === "b";
-    const isC = next === "c";
     modeABtn.setAttribute("aria-pressed", isA ? "true" : "false");
-    modeBBtn.setAttribute("aria-pressed", isB ? "true" : "false");
-    modeCBtn.setAttribute("aria-pressed", isC ? "true" : "false");
+    modeBBtn.setAttribute("aria-pressed", isA ? "false" : "true");
     panelsA.hidden = !isA;
-    panelsB.hidden = !isB;
-    panelsC.hidden = !isC;
+    panelsB.hidden = isA;
     panelsA.setAttribute("aria-hidden", isA ? "false" : "true");
-    panelsB.setAttribute("aria-hidden", isB ? "false" : "true");
-    panelsC.setAttribute("aria-hidden", isC ? "false" : "true");
-    refBrfBox.hidden = !isC;
-
-    if (isA || isB) {
-      if (cache) fillPageSelectPdf(cache.pdfPages, cache.pageIndex);
-      if (isB) requestAnimationFrame(paintOverlay);
-      if (isA || isB) {
-        if (cache) showLinkedPage(cache.pageIndex);
-      }
-    } else if (isC) {
-      if (review) {
-        fillPageSelectReview(review.reviewPages, review.pageIndex);
-        showReviewPage(review.pageIndex);
-      } else {
-        pageSelect.innerHTML = "";
-        pageSelect.disabled = true;
-        clearReviewPanels("(참고 BRF를 올리면 생성본과 나란히 비교합니다.)");
-        reviewSummary.textContent = "";
-      }
-    }
+    panelsB.setAttribute("aria-hidden", isA ? "true" : "false");
+    if (!isA) requestAnimationFrame(paintOverlay);
   }
 
-  function fillPageSelectPdf(pdfPages, selectedIndex) {
+  function fillPageSelect(pdfPages, selectedIndex) {
     pageSelect.innerHTML = "";
     pdfPages.forEach((p, i) => {
       const opt = document.createElement("option");
@@ -106,89 +64,6 @@
       pageSelect.appendChild(opt);
     });
     pageSelect.disabled = pdfPages.length === 0;
-  }
-
-  function fillPageSelectReview(pages, selectedIndex) {
-    pageSelect.innerHTML = "";
-    pages.forEach((p, i) => {
-      const opt = document.createElement("option");
-      opt.value = String(i);
-      opt.textContent = String(p.index);
-      if (i === selectedIndex) opt.selected = true;
-      pageSelect.appendChild(opt);
-    });
-    pageSelect.disabled = pages.length === 0;
-  }
-
-  function escapeHtml(text) {
-    return String(text)
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;");
-  }
-
-  function renderAnnotated(el, lines, emptyMessage) {
-    if (!lines || !lines.length) {
-      el.textContent = emptyMessage || "(내용 없음)";
-      return;
-    }
-    const parts = [];
-    lines.forEach((line, idx) => {
-      if (idx) parts.push("\n");
-      const text = line.text || "";
-      const mask = Array.isArray(line.mismatch) ? line.mismatch : [];
-      if (!text.length) return;
-      let i = 0;
-      while (i < text.length) {
-        const bad = !!mask[i];
-        let j = i + 1;
-        while (j < text.length && !!mask[j] === bad) j += 1;
-        const chunk = escapeHtml(text.slice(i, j));
-        if (bad) {
-          parts.push(`<span class="diff">${chunk}</span>`);
-        } else {
-          parts.push(chunk);
-        }
-        i = j;
-      }
-    });
-    el.innerHTML = parts.join("") || emptyMessage || "(빈 면)";
-  }
-
-  function clearReviewPanels(message) {
-    Object.values(reviewEls).forEach((el) => {
-      if (el) el.textContent = message;
-    });
-  }
-
-  function showReviewPage(pageIndex) {
-    if (!review || !review.reviewPages.length) return;
-    const idx = Math.max(0, Math.min(pageIndex, review.reviewPages.length - 1));
-    review.pageIndex = idx;
-    pageSelect.value = String(idx);
-    const page = review.reviewPages[idx];
-    const gen = page.generated || {};
-    const ref = page.reference || {};
-    renderAnnotated(reviewEls.genBraille, gen.unicode_lines, "(생성 점자 없음)");
-    renderAnnotated(reviewEls.refBraille, ref.unicode_lines, "(참고 점자 없음)");
-    renderAnnotated(reviewEls.genReverse, gen.reverse_lines, "(생성 역점역 없음)");
-    renderAnnotated(reviewEls.refReverse, ref.reverse_lines, "(참고 역점역 없음)");
-  }
-
-  function updateReviewSummary() {
-    if (!review || !review.compare) {
-      reviewSummary.textContent = "";
-      return;
-    }
-    const c = review.compare;
-    const name = review.referenceName || "참고 BRF";
-    const pct = (n) =>
-      typeof n === "number" ? `${Math.round(n * 1000) / 10}%` : "—";
-    reviewSummary.textContent =
-      `참고: ${name} · 행 일치 ${c.matched_lines}/${Math.max(c.generated_lines, c.reference_lines)}` +
-      ` (${pct(c.line_match_ratio)}) · 셀 일치 ${c.cell_equal}/${c.cell_total}` +
-      ` (${pct(c.cell_match_ratio)}) · 차이 ${c.diff_count}건` +
-      " · 노란 음영은 불일치 구간입니다.";
   }
 
   function setExpanded(li, expanded) {
@@ -336,8 +211,7 @@
     const ids = new Set(cache.highlightBlockIds || []);
     if (!ids.size) return;
 
-    const blocks = pdf.blocks || [];
-    blocks.forEach((block) => {
+    (pdf.blocks || []).forEach((block) => {
       if (!ids.has(block.id)) return;
       const [x0, y0, x1, y1] = block.bbox || [];
       if ([x0, y0, x1, y1].some((v) => typeof v !== "number")) return;
@@ -359,11 +233,10 @@
     if (!cache || cache.pdfPages.length === 0) return;
     const idx = Math.max(0, Math.min(pageIndex, cache.pdfPages.length - 1));
     cache.pageIndex = idx;
-    if (mode !== "c") pageSelect.value = String(idx);
+    pageSelect.value = String(idx);
 
     const pdf = cache.pdfPages[idx];
     const brl = cache.braillePages[idx];
-
     const url = pdfUrl(pdf.page_number);
     pdfImgA.src = url;
     pdfImgB.src = url;
@@ -384,27 +257,19 @@
         "(이 면에 대응하는 역점역 없음)";
     }
 
-    if (pdfImgB.complete) {
-      paintOverlay();
-    } else {
-      pdfImgB.addEventListener("load", () => paintOverlay(), { once: true });
-    }
+    if (pdfImgB.complete) paintOverlay();
+    else pdfImgB.addEventListener("load", () => paintOverlay(), { once: true });
   }
 
   function updateStatusLine() {
     if (!cache) return;
     const name = (cache.status && cache.status.source_name) || "문서";
     const warn = (cache.warnings && cache.warnings.length) || 0;
-    const ref =
-      cache.status && cache.status.has_reference_brf
-        ? ` · 참고 BRF ${cache.status.reference_name || "있음"}`
-        : "";
     setStatus(
       `${name} · 원문 ${cache.pdfPages.length}면` +
         (cache.braillePages.length !== cache.pdfPages.length
           ? ` · 점자 ${cache.braillePages.length}면`
           : "") +
-        ref +
         (warn ? ` · 경고 ${warn}건` : "") +
         " · 읽기 전용 진단입니다."
     );
@@ -425,68 +290,6 @@
           })
       )
     );
-  }
-
-  async function loadReview({ quiet = false } = {}) {
-    if (!quiet) setStatus("검토 데이터를 불러오는 중…");
-    try {
-      const res = await fetch("/api/dev/review");
-      const data = await res.json();
-      if (!data.ok) {
-        review = null;
-        if (mode === "c") {
-          clearReviewPanels(data.message || "(참고 BRF를 먼저 올리세요.)");
-          reviewSummary.textContent = "";
-          pageSelect.innerHTML = "";
-          pageSelect.disabled = true;
-        }
-        if (!quiet) setAlert(data.message || "검토 데이터를 만들 수 없습니다.");
-        return false;
-      }
-      review = {
-        reviewPages: data.review_pages || [],
-        compare: data.compare || null,
-        referenceName: data.reference_name || "reference.brf",
-        pageIndex: 0,
-      };
-      updateReviewSummary();
-      if (mode === "c") {
-        fillPageSelectReview(review.reviewPages, 0);
-        showReviewPage(0);
-      }
-      if (cache && cache.status) {
-        cache.status.has_reference_brf = true;
-        cache.status.reference_name = review.referenceName;
-      }
-      updateStatusLine();
-      return true;
-    } catch (_err) {
-      if (!quiet) setAlert("검토 모드를 불러오는 중 오류가 발생했습니다.");
-      return false;
-    }
-  }
-
-  async function uploadReferenceBrf(file) {
-    if (!file) return;
-    setStatus("참고 BRF를 올리는 중…");
-    const form = new FormData();
-    form.append("file", file, file.name || "reference.brf");
-    try {
-      const res = await fetch("/api/dev/reference-brf", {
-        method: "POST",
-        body: form,
-      });
-      const data = await res.json();
-      if (!data.ok) {
-        setAlert(data.message || "참고 BRF를 올릴 수 없습니다.");
-        return;
-      }
-      if (cache) cache.status = data.status || cache.status;
-      setStatus(data.message || "참고 BRF를 올렸습니다.", { focus: true });
-      await loadReview({ quiet: true });
-    } catch (_err) {
-      setAlert("참고 BRF 업로드 중 오류가 발생했습니다.");
-    }
   }
 
   async function loadBundle() {
@@ -521,29 +324,17 @@
         warnings: data.warnings || [],
       };
 
-      if (mode !== "c") fillPageSelectPdf(pdfPages, startIndex);
+      fillPageSelect(pdfPages, startIndex);
       highlightStatus.textContent = "";
-
       document.getElementById("exam-tree-text").textContent =
         data.exam_tree_text || "";
       document.getElementById("dtbook-xml").textContent = data.dtbook_xml || "";
       const tree = data.exam_tree || {};
       document.getElementById("tree-summary").textContent = tree.summary || "";
       renderTree(examTreeEl, tree.root);
-
       showLinkedPage(startIndex);
       updateStatusLine();
       prefetchPdfImages(pdfPages).catch(() => {});
-
-      if (data.status && data.status.has_reference_brf) {
-        await loadReview({ quiet: true });
-      } else {
-        review = null;
-        if (mode === "c") {
-          clearReviewPanels("(참고 BRF를 올리면 생성본과 나란히 비교합니다.)");
-          reviewSummary.textContent = "";
-        }
-      }
     } catch (_err) {
       setAlert("개발자 모드를 불러오는 중 오류가 발생했습니다.");
     }
@@ -621,19 +412,10 @@
 
   modeABtn.addEventListener("click", () => setMode("a"));
   modeBBtn.addEventListener("click", () => setMode("b"));
-  modeCBtn.addEventListener("click", () => setMode("c"));
   btnReload.addEventListener("click", () => loadBundle());
-  refBrfFile.addEventListener("change", () => {
-    const file = refBrfFile.files && refBrfFile.files[0];
-    uploadReferenceBrf(file);
-  });
   pageSelect.addEventListener("change", () => {
     const n = Number(pageSelect.value);
     if (Number.isNaN(n)) return;
-    if (mode === "c") {
-      showReviewPage(n);
-      return;
-    }
     if (cache) {
       cache.highlightBlockIds = [];
       cache.selectedNodeId = null;
@@ -648,7 +430,6 @@
 
   initSplitters(panelsA);
   initSplitters(panelsB);
-  initSplitters(panelsC);
   setMode("a");
   loadBundle();
 })();

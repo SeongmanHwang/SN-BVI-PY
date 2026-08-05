@@ -96,7 +96,12 @@ def test_developer_bundle_and_page(client, tiny_pdf_bytes: bytes):
     assert len(png.content) > 100
 
 
-def test_developer_review_mode_reference_brf(client, tiny_pdf_bytes: bytes):
+def test_review_mode_whole_brf_compare(client, tiny_pdf_bytes: bytes):
+    assert client.get("/review").status_code == 200
+    review_html = client.get("/review").text
+    assert "검토 모드" in review_html
+    assert "모드 C" not in client.get("/dev").text
+
     client.post(
         "/api/upload",
         files={"file": ("sample.pdf", tiny_pdf_bytes, "application/pdf")},
@@ -106,7 +111,6 @@ def test_developer_review_mode_reference_brf(client, tiny_pdf_bytes: bytes):
     assert brf.status_code == 200
     generated = brf.content
 
-    # 참고본: 첫 비공백 행을 살짝 바꿈
     text = generated.decode("utf-8", errors="replace")
     lines = text.splitlines(keepends=True)
     tweaked = []
@@ -119,31 +123,47 @@ def test_developer_review_mode_reference_brf(client, tiny_pdf_bytes: bytes):
             tweaked.append(line)
     reference = "".join(tweaked).encode("utf-8")
 
-    missing = client.get("/api/dev/review")
+    missing = client.get("/api/review/bundle")
     assert missing.status_code == 400
 
-    up = client.post(
-        "/api/dev/reference-brf",
+    up_ref = client.post(
+        "/api/review/reference-brf",
         files={"file": ("vendor.brf", reference, "text/plain")},
     )
-    assert up.status_code == 200
-    assert up.json()["ok"] is True
-    assert up.json()["status"]["has_reference_brf"] is True
+    assert up_ref.status_code == 200
+    assert up_ref.json()["ok"] is True
 
-    review = client.get("/api/dev/review")
+    review = client.get("/api/review/bundle")
     assert review.status_code == 200
     body = review.json()
     assert body["ok"] is True
     assert body["reference_name"] == "vendor.brf"
     assert body["review_pages"]
+    assert "assignment_summary" in body
+    assert "unassigned_reference" in body
     page0 = body["review_pages"][0]
     assert "generated" in page0 and "reference" in page0
     assert "unicode_lines" in page0["generated"]
-    assert "mismatch" in page0["generated"]["unicode_lines"][0]
     assert "compare" in body
-    assert "cell_match_ratio" in body["compare"]
 
-    # UI에 모드 C 진입점
-    dev = client.get("/dev")
-    assert "모드 C" in dev.text
-    assert "review-gen-braille" in dev.text
+    up_gen = client.post(
+        "/api/review/generated-brf",
+        files={"file": ("mine.brf", generated, "text/plain")},
+    )
+    assert up_gen.status_code == 200
+    again = client.get("/api/review/bundle")
+    assert again.json()["generated_name"] == "mine.brf"
+
+    # 스트림: progress + done
+    stream = client.get("/api/review/bundle-stream")
+    assert stream.status_code == 200
+    lines = [ln for ln in stream.text.splitlines() if ln.strip()]
+    assert lines
+    import json
+
+    events = [json.loads(ln) for ln in lines]
+    assert any(e.get("type") == "progress" for e in events)
+    done = [e for e in events if e.get("type") == "done"]
+    assert done and done[-1]["ok"] is True
+    assert "review_pages" in done[-1]
+    assert "progress-bar" in review_html

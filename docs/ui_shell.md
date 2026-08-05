@@ -30,9 +30,20 @@
 |------|------|
 | A | 원문 PDF(읽기 전용) · BRF · 역점역 |
 | B | 원문 PDF(읽기 전용) · 구조 계층 · **DTBook XML** |
-| C | **생성 BRF** · **참고 BRF**(업로드) · 각각의 점자·역점역. 행 정렬 후 **불일치 글자만** 음영 |
 
-구현 스택: 웹 `/dev` — 모드 A/B/C 패널. PDF는 읽기 전용(이미지+추출 텍스트). 모드 C는 `POST /api/dev/reference-brf` + `GET /api/dev/review`.
+구현 스택: 웹 `/dev` — 모드 A/B 패널. PDF는 읽기 전용(이미지+추출 텍스트).
+
+### 0.2b 검토 모드 — BRF 대 BRF (별도 흐름)
+
+사용자·개발자와 **성격이 다른** 비교 전용 화면 (`/review`).
+
+| 조작 | 동작 |
+|------|------|
+| 생성 BRF 업로드 | 비교 왼쪽 (또는 사용자 모드 변환 결과 재사용) |
+| 참고 BRF 업로드 | 비교 오른쪽 |
+| 비교하기 | **생성 면**마다 참고에서 창을 배정해 점자·역점역 비교 |
+
+배정: 생성 면 텍스트와 **아직 미배정인 참고 구간**에서 최장 연속 일치(기본 ≥16자, **공백·줄바꿈 무시**)를 찾고, 그 앵커로 **생성 면과 같은 내용 길이**의 참고 창을 자른다. 창은 서로 겹치지 않으며, 남는 참고 구간은 **누락**으로 집계·요약에 표시한다. 면 안 음영은 최장 일치 앵커 최대 5개. API: `POST /api/review/generated-brf` · `POST /api/review/reference-brf` · `GET /api/review/bundle` · `GET /api/review/bundle-stream`.
 
 ### 0.3 변환 상태·오류 안내 (접근성) — 확정
 
@@ -70,8 +81,8 @@ pdf · exam · braille · layout · brf · nav
 | `default_pipeline()` / `PipelineResult` | `pipeline` | 워크스페이스가 감쌈 |
 | `DtbookExporter` | `daisy.ports` | Exam → DTBook 2005-3 XML (`ExamDtbookExporter`) |
 | `ExamNavigator` + `NavLocation` | `nav` | 개발자 모드 B 계층 패널 |
-| `brf` reverse / compare | `brf/*` | 개발자 모드 A 역점역 · 모드 C 비교 |
-| `session.review` | `session/review.py` | 모드 C 면·행 불일치 마스크 |
+| `brf` reverse / compare | `brf/*` | 개발자 모드 A 역점역 · 검토 모드 비교 |
+| `session.review` | `session/review.py` | 검토 모드 — 생성 면 기준 참고 창 배정·누락 집계 |
 
 ### `ConversionWorkspace` 요약
 
@@ -99,7 +110,7 @@ exam_document / source_path
 
 | UI | 상태 |
 |----|------|
-| `web/` 사용자·개발자 모드 | `/` 업로드·변환·다운로드 · `/dev` 모드 A/B/C 진단 패널 |
+| `web/` 사용자·개발자·검토 모드 | `/` 업로드·변환·다운로드 · `/dev` 모드 A/B · `/review` BRF 전체 비교 |
 | `PdfStructureWindow` | 레거시 **읽기 전용** (병합·분할·태그·저장 메뉴 제거) |
 | `BrfInspectorWindow` | 레거시 **읽기 전용** (태그 저장·후보 적용 제거) |
 

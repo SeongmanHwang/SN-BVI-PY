@@ -1,4 +1,4 @@
-"""로컬 웹 셸 (Starlette) — 사용자·개발자 모드."""
+"""로컬 웹 셸 (Starlette) — 사용자·개발자·검토 모드."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from urllib.parse import quote
 
 from starlette.applications import Starlette
 from starlette.requests import Request
-from starlette.responses import FileResponse, JSONResponse, Response
+from starlette.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
@@ -26,6 +26,9 @@ def create_app(*, workspace: ConversionWorkspace | None = None) -> Starlette:
 
     async def developer_page(_request: Request) -> FileResponse:
         return FileResponse(STATIC_DIR / "developer.html")
+
+    async def review_page(_request: Request) -> FileResponse:
+        return FileResponse(STATIC_DIR / "review.html")
 
     async def api_status(_request: Request) -> JSONResponse:
         return JSONResponse(ws.status_snapshot())
@@ -170,7 +173,9 @@ def create_app(*, workspace: ConversionWorkspace | None = None) -> Starlette:
             )
         return Response(png, media_type="image/png")
 
-    async def api_dev_reference_brf(request: Request) -> JSONResponse:
+    async def _upload_brf(
+        request: Request, *, side: str
+    ) -> JSONResponse:
         form = await request.form()
         upload = form.get("file")
         if upload is None:
@@ -178,20 +183,24 @@ def create_app(*, workspace: ConversionWorkspace | None = None) -> Starlette:
                 {"ok": False, "message": "BRF 파일이 없습니다."},
                 status_code=400,
             )
-        filename = getattr(upload, "filename", None) or "reference.brf"
+        filename = getattr(upload, "filename", None) or f"{side}.brf"
         data = await upload.read()  # type: ignore[union-attr]
+        label = "생성 BRF" if side == "generated" else "참고 BRF"
         try:
-            meta = ws.load_reference_brf_bytes(data, filename=str(filename))
+            if side == "generated":
+                meta = ws.load_generated_brf_bytes(data, filename=str(filename))
+            else:
+                meta = ws.load_reference_brf_bytes(data, filename=str(filename))
         except Exception as exc:  # noqa: BLE001
             return JSONResponse(
-                {"ok": False, "message": f"참고 BRF를 열 수 없습니다. {exc}"},
+                {"ok": False, "message": f"{label}를 열 수 없습니다. {exc}"},
                 status_code=400,
             )
         return JSONResponse(
             {
                 "ok": True,
                 "message": (
-                    f"참고 BRF {meta['name']}을(를) 올렸습니다. "
+                    f"{label} {meta['name']}을(를) 올렸습니다. "
                     f"{meta['pages']}면 · {meta['lines']}행."
                 ),
                 "meta": meta,
@@ -199,7 +208,13 @@ def create_app(*, workspace: ConversionWorkspace | None = None) -> Starlette:
             }
         )
 
-    async def api_dev_review(_request: Request) -> JSONResponse:
+    async def api_review_generated_brf(request: Request) -> JSONResponse:
+        return await _upload_brf(request, side="generated")
+
+    async def api_review_reference_brf(request: Request) -> JSONResponse:
+        return await _upload_brf(request, side="reference")
+
+    async def api_review_bundle(_request: Request) -> JSONResponse:
         try:
             bundle = ws.review_bundle()
         except ValueError as exc:
@@ -211,9 +226,56 @@ def create_app(*, workspace: ConversionWorkspace | None = None) -> Starlette:
             )
         return JSONResponse({"ok": True, **bundle})
 
+    async def api_review_bundle_stream(_request: Request) -> Response:
+        import asyncio
+        import json
+        import queue
+        import threading
+
+        events: queue.Queue[dict[str, object] | None] = queue.Queue()
+
+        def worker() -> None:
+            def on_progress(current: int, total: int, message: str) -> None:
+                events.put(
+                    {
+                        "type": "progress",
+                        "current": current,
+                        "total": max(total, 1),
+                        "message": message,
+                    }
+                )
+
+            try:
+                bundle = ws.review_bundle(on_progress=on_progress)
+                events.put({"type": "done", "ok": True, **bundle})
+            except ValueError as exc:
+                events.put({"type": "error", "ok": False, "message": str(exc)})
+            except Exception as exc:  # noqa: BLE001
+                events.put(
+                    {
+                        "type": "error",
+                        "ok": False,
+                        "message": f"검토 데이터를 만들 수 없습니다. {exc}",
+                    }
+                )
+            finally:
+                events.put(None)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+        async def stream():
+            while True:
+                item = await asyncio.to_thread(events.get)
+                if item is None:
+                    break
+                yield (json.dumps(item, ensure_ascii=False) + "\n").encode("utf-8")
+
+        return StreamingResponse(stream(), media_type="application/x-ndjson")
+
     routes = [
         Route("/", index),
         Route("/dev", developer_page),
+        Route("/review", review_page),
         Route("/api/status", api_status),
         Route("/api/upload", api_upload, methods=["POST"]),
         Route("/api/convert", api_convert, methods=["POST"]),
@@ -221,8 +283,10 @@ def create_app(*, workspace: ConversionWorkspace | None = None) -> Starlette:
         Route("/api/download/dtbook", api_download_dtbook),
         Route("/api/dev/bundle", api_dev_bundle),
         Route("/api/dev/pdf-page/{page:int}", api_dev_pdf_page),
-        Route("/api/dev/reference-brf", api_dev_reference_brf, methods=["POST"]),
-        Route("/api/dev/review", api_dev_review),
+        Route("/api/review/generated-brf", api_review_generated_brf, methods=["POST"]),
+        Route("/api/review/reference-brf", api_review_reference_brf, methods=["POST"]),
+        Route("/api/review/bundle", api_review_bundle),
+        Route("/api/review/bundle-stream", api_review_bundle_stream),
         Mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static"),
     ]
     app = Starlette(routes=routes)
@@ -232,7 +296,7 @@ def create_app(*, workspace: ConversionWorkspace | None = None) -> Starlette:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="국어 시험 PDF→BRF 웹 셸 (사용자·개발자 모드)"
+        description="국어 시험 PDF→BRF 웹 셸 (사용자·개발자·검토 모드)"
     )
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
