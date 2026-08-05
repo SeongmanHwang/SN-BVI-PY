@@ -1,18 +1,13 @@
 # -*- coding: utf-8 -*-
-"""시험지 구조 부호: 보기·대괄호·쌍점·범위·표선·한자."""
+"""시험지 구조 부호: 보기·대괄호·쌍점·범위·표선."""
 
 from korean_exam_braille.app.braille.translator import hangul_text_to_ascii
-from korean_exam_braille.app.brf.reverse_translator import (
-    _cleanup_hanja_placeholders,
-    reverse_translate_line as r,
-)
+from korean_exam_braille.app.brf.reverse_translator import reverse_translate_line as r
 
 
 def test_example_box_title():
     assert r(hangul_text_to_ascii("<보기>")) == "<보기>"
     assert r("78^u@o07") == "<보기>"
-    # 참고 BRF: 쉼표+따옴표 관례
-    assert r("1,8^u@o0'1") == "<보기>"
 
 
 def test_score_bracket():
@@ -47,12 +42,3 @@ def test_inline_decorative_skip_around_example():
     line = "g" * 8 + body + "g" * 8
     assert "<보기>" in r(line)
     assert "운" not in r(line)
-
-
-def test_hanja_placeholder():
-    assert (
-        _cleanup_hanja_placeholders("옽<U:'>(나-오), 은(숨을-은)")
-        == "<한자>(나-오), 은(숨을-은)"
-    )
-    # 정상 한글 라벨은 유지
-    assert _cleanup_hanja_placeholders("음(마실-음)") == "음(마실-음)"

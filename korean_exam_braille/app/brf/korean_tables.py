@@ -316,9 +316,6 @@ def _build_on_sign_bodies() -> list[tuple[str, str]]:
 
 
 ON_SIGN_BODIES: list[tuple[str, str]] = _build_on_sign_bodies()
-ON_SIGN_JAMO: dict[str, str] = {
-    body: jamo for body, jamo in ON_SIGN_BODIES if len(body) == 1
-}
 
 CHO_INDEX = {
     "ㄱ": 0, "ㄲ": 1, "ㄴ": 2, "ㄷ": 3, "ㄸ": 4, "ㄹ": 5, "ㅁ": 6, "ㅂ": 7,

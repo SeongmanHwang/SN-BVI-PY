@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import re
 
-from korean_exam_braille.app.brf.ascii_braille import ascii_to_unicode, normalize_brf_ascii
+from korean_exam_braille.app.brf.ascii_braille import normalize_brf_ascii
 from korean_exam_braille.app.brf.korean_tables import (
     ABBREV_CV,
     ABBREV_GEOT,
@@ -51,8 +51,6 @@ _CLOSING_MULTI_PREFIXES = frozenset(
 ) | frozenset({"0'", "02", "01", "00", ",0", "07", ";0"})
 
 _LATIN_LETTERS = frozenset("abcdefghijklmnopqrstuvwxyz")
-# 대문자 약어(EXW) 직후 한글 조사로만 종료. a–z↔한글 겹침을 피한다.
-_PARTICLE_AFTER_ACRONYM = frozenset(JUNGSEONG) | frozenset({"c", "z", "!", "$"})
 
 # 시험 지문 범위: 82#a`9#c;0 → [1~3] (normalize 후 ` → @)
 _PASSAGE_RANGE_ASCII = re.compile(
@@ -212,25 +210,6 @@ def _hangul_particle_len(chars: list[str], i: int) -> int:
             continue
         return len(form)
     return 0
-
-
-def _latin_word_continues(chars: list[str], i: int) -> bool:
-    """i부터 영단어가 이어지면 True (조사 후보가 아닐 때)."""
-    if _hangul_particle_len(chars, i) > 0:
-        return False
-    count = 0
-    j = i
-    while j < len(chars) and chars[j] != " ":
-        n = _norm_cell(chars[j])
-        if n == ",":
-            j += 1
-            continue
-        if n in _LATIN_LETTERS:
-            count += 1
-            j += 1
-            continue
-        break
-    return count >= 2
 
 
 def _starts_closing_multi(chars: list[str], i: int) -> bool:
@@ -455,20 +434,6 @@ def _try_skip_decorative_run(chars: list[str], i: int) -> int | None:
     if j - i >= 6:
         return j
     return None
-
-
-def _cleanup_hanja_placeholders(text: str) -> str:
-    """한자 점형이 한글·미지로 깨진 뒤 (훈-음)만 남은 경우 <한자>로 보존."""
-    return re.sub(
-        r"(?:[가-힣]?<U:[^>]+>)+(\([^)]+-[^)]+\))",
-        r"<한자>\1",
-        text,
-    )
-
-
-def _normalize_example_box_title(text: str) -> str:
-    """참고 BRF 관례 ,‘보기’, → <보기>."""
-    return re.sub(r",[‘']([^’']+)[’'],", r"<\1>", text)
 
 
 def _try_passage_range(chars: list[str], i: int, out: list[str]) -> int | None:
@@ -914,23 +879,7 @@ def reverse_translate_line(raw_ascii: str) -> str:
                 i += 1
                 continue
 
-        if n in "=@g.-_":
-            out.append(ch if ch in "=@g.-_" else n)
-            i += 1
-            continue
-
         out.append(_unknown(ch if ch.strip() else n))
         i += 1
 
-    return _normalize_example_box_title(_cleanup_hanja_placeholders("".join(out)))
-
-
-def reverse_translate_unicode(unicode_braille: str) -> str:
-    from korean_exam_braille.app.brf.ascii_braille import unicode_to_ascii
-
-    return reverse_translate_line(unicode_to_ascii(unicode_braille))
-
-
-def preview_pair(raw_ascii: str) -> tuple[str, str]:
-    normalized = normalize_brf_ascii(raw_ascii)
-    return ascii_to_unicode(normalized), reverse_translate_line(raw_ascii)
+    return "".join(out)
