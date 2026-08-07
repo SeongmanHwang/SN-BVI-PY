@@ -101,6 +101,33 @@ def _sep_line() -> BrailleLine:
     )
 
 
+def _bracket_start_rule(
+    label_ascii: str,
+    *,
+    width: int,
+    source_node_id: str,
+) -> BrailleLine:
+    """``⠖⠒⠒⠒⠒⠀[A]⠀⠒…⠲`` 형식의 구간 위 표선."""
+    prefix = "6" + ("3" * 4) + " "
+    suffix_width = max(1, width - len(prefix) - len(label_ascii) - 2)
+    ascii_text = prefix + label_ascii + " " + ("3" * suffix_width) + "4"
+    return BrailleLine(
+        cells=_ascii_line_to_cells(ascii_text),
+        source_node_ids=[source_node_id] if source_node_id else [],
+        ascii_text=ascii_text,
+    )
+
+
+def _bracket_end_rule(*, width: int, source_node_id: str) -> BrailleLine:
+    """``⠓⠒…⠚`` 형식의 구간 아래 표선."""
+    ascii_text = "h" + ("3" * max(1, width - 2)) + "j"
+    return BrailleLine(
+        cells=_ascii_line_to_cells(ascii_text),
+        source_node_ids=[source_node_id] if source_node_id else [],
+        ascii_text=ascii_text,
+    )
+
+
 class RuleBrailleLayoutEngine:
     """토큰 ASCII를 들여쓰기·줄바꿈·면 분할한다."""
 
@@ -132,6 +159,18 @@ class RuleBrailleLayoutEngine:
             elif node_type == "ExampleBox" and lines:
                 lines.append(_sep_line())
 
+            start_rules = seq.metadata.get("bracket_start_ascii") or []
+            if isinstance(start_rules, list):
+                for label_ascii in start_rules:
+                    if isinstance(label_ascii, str) and label_ascii:
+                        lines.append(
+                            _bracket_start_rule(
+                                label_ascii,
+                                width=prof.cells_per_line,
+                                source_node_id=seq.source_node_id,
+                            )
+                        )
+
             ascii_text = _sequence_ascii(seq)
             indent = _indent_for(node_type, prof)
             preformatted = bool(seq.metadata.get("preformatted"))
@@ -157,6 +196,17 @@ class RuleBrailleLayoutEngine:
                         ascii_text=row,
                     )
                 )
+
+            end_labels = seq.metadata.get("bracket_end_labels") or []
+            if isinstance(end_labels, list):
+                for label in end_labels:
+                    if isinstance(label, str) and label:
+                        lines.append(
+                            _bracket_end_rule(
+                                width=prof.cells_per_line,
+                                source_node_id=seq.source_node_id,
+                            )
+                        )
 
             # PassageGroup 지시문 뒤 구분선
             if node_type == "PassageGroup":

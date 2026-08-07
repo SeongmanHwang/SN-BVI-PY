@@ -5,6 +5,9 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
+from korean_exam_braille.app.exam.bracket_metadata import (
+    metadata_from_candidate_tags,
+)
 from korean_exam_braille.app.exam.models import (
     ExamDocument,
     ExamNode,
@@ -56,6 +59,7 @@ def _node_from_block(
     meta: dict = {
         "candidate_tags": list(block.candidate_tags),
         "tags": list(block.tags),
+        **metadata_from_candidate_tags(block.candidate_tags),
         **extra_meta,
     }
     return ExamNode(

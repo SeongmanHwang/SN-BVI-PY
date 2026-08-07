@@ -5,6 +5,8 @@ from korean_exam_braille.app.braille.translator import (
     hangul_text_to_ascii,
 )
 from korean_exam_braille.app.brf.reverse_translator import reverse_translate_line
+from korean_exam_braille.app.exam.models import ExamNode, SourceRange
+from korean_exam_braille.app.layout.engine import RuleBrailleLayoutEngine
 
 
 def test_number_and_simple_syllables():
@@ -55,6 +57,32 @@ def test_translator_fills_cells():
     assert seq.tokens
     assert seq.tokens[0].cells
     assert seq.metadata.get("ascii")
+
+
+def test_bracket_start_metadata_is_emitted_once_and_roundtrips():
+    node = ExamNode(
+        id="p1",
+        node_type="Passage",
+        source_range=SourceRange(raw_text="학생1 발언"),
+        metadata={
+            "bracket_labels": ["[A]"],
+            "bracket_start_labels": ["[A]"],
+            "bracket_end_labels": ["[A]"],
+        },
+    )
+    seq = TableBrailleTranslator().translate_node(node)
+    document = RuleBrailleLayoutEngine().layout([seq])
+    rows = [
+        line.ascii_text
+        for page in document.pages
+        for line in page.lines
+        if line.ascii_text
+    ]
+    assert rows[0].startswith("63333 " + hangul_text_to_ascii("[A]") + " ")
+    assert reverse_translate_line(rows[0]).startswith("┌──── [A]")
+    assert any(reverse_translate_line(row).strip().startswith("학생1") for row in rows)
+    assert rows[-1].startswith("h333333")
+    assert reverse_translate_line(rows[-1]).startswith("└")
 
 
 def test_circled_choice_to_marked_digit():

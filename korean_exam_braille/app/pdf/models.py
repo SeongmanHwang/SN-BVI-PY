@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
+if TYPE_CHECKING:
+    from korean_exam_braille.app.pdf.bracket_groups import BracketGroup
 
 BBox = tuple[float, float, float, float]
 
@@ -71,6 +73,8 @@ class PdfLine:
     span_ids: list[str]
     page_number: int
     reading_order: int = 0
+    # 오른쪽 여백 꺾인 괄호 소속 — 예: "[A]"
+    bracket_label: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -80,6 +84,7 @@ class PdfLine:
             "span_ids": list(self.span_ids),
             "page_number": self.page_number,
             "reading_order": self.reading_order,
+            "bracket_label": self.bracket_label,
         }
 
     @classmethod
@@ -92,6 +97,7 @@ class PdfLine:
             span_ids=list(data.get("span_ids") or []),
             page_number=int(data["page_number"]),
             reading_order=int(data.get("reading_order", 0)),
+            bracket_label=data.get("bracket_label"),
         )
 
 
@@ -144,6 +150,7 @@ class PdfPageStructure:
     spans: list[PdfSpan] = field(default_factory=list)
     lines: list[PdfLine] = field(default_factory=list)
     blocks: list[PdfBlock] = field(default_factory=list)
+    bracket_groups: list[BracketGroup] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -153,10 +160,15 @@ class PdfPageStructure:
             "spans": [s.to_dict() for s in self.spans],
             "lines": [ln.to_dict() for ln in self.lines],
             "blocks": [b.to_dict() for b in self.blocks],
+            "bracket_groups": [
+                g.to_dict() if hasattr(g, "to_dict") else g for g in self.bracket_groups
+            ],
         }
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> PdfPageStructure:
+        from korean_exam_braille.app.pdf.bracket_groups import BracketGroup
+
         return cls(
             page_number=int(data["page_number"]),
             width=float(data["width"]),
@@ -164,6 +176,9 @@ class PdfPageStructure:
             spans=[PdfSpan.from_dict(x) for x in data.get("spans", [])],
             lines=[PdfLine.from_dict(x) for x in data.get("lines", [])],
             blocks=[PdfBlock.from_dict(x) for x in data.get("blocks", [])],
+            bracket_groups=[
+                BracketGroup.from_dict(x) for x in data.get("bracket_groups", [])
+            ],
         )
 
 

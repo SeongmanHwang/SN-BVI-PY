@@ -127,6 +127,25 @@ def _separator_ink(text: str) -> str:
     return "─" * 16
 
 
+def _bracket_rule_ink(text: str) -> str | None:
+    """라벨 포함 위 표선 / 닫는 아래 표선을 검수용 묵자로 복원."""
+    s = normalize_brf_ascii(text).strip()
+    top = re.fullmatch(r"6(3{4}) +(82\S+;0) +(3+)4", s)
+    if top:
+        label = reverse_translate_line(top.group(2))
+        return (
+            "┌"
+            + ("─" * len(top.group(1)))
+            + f" {label} "
+            + ("─" * len(top.group(3)))
+            + "┐"
+        )
+    bottom = re.fullmatch(r"h(3{6,})j", s)
+    if bottom:
+        return "└" + ("─" * len(bottom.group(1))) + "┘"
+    return None
+
+
 def _syllable(cho: str, jung: str, jong: str = "") -> str:
     return compose_hangul(cho, jung, jong) or f"<U:syl:{cho}+{jung}+{jong}>"
 
@@ -658,6 +677,9 @@ def _try_roman_mode(chars: list[str], i: int, out: list[str]) -> int | None:
 
 def reverse_translate_line(raw_ascii: str) -> str:
     text = normalize_brf_ascii(raw_ascii)
+    bracket_rule = _bracket_rule_ink(text)
+    if bracket_rule is not None:
+        return bracket_rule
     if _is_separator_line(text):
         return _separator_ink(text)
 

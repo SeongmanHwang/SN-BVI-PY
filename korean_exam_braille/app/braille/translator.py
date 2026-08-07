@@ -6,6 +6,7 @@ import re
 
 from korean_exam_braille.app.braille.models import BrailleSequence, BrailleToken
 from korean_exam_braille.app.brf.ascii_braille import ascii_char_to_dots
+from korean_exam_braille.app.exam.bracket_metadata import bracket_labels
 from korean_exam_braille.app.brf.korean_tables import (
     ABBREV_CV,
     ABBREV_GEOT,
@@ -518,9 +519,18 @@ class TableBrailleTranslator:
                     "skipped": True,
                 },
             )
+        starts = bracket_labels(node.metadata, starts_only=True)
+        ends = bracket_labels(node.metadata, ends_only=True)
         seq = self.translate_text(text)
         seq.source_node_id = node.id
         seq.metadata["node_type"] = node.node_type
+        if starts:
+            seq.metadata["bracket_start_labels"] = starts
+            seq.metadata["bracket_start_ascii"] = [
+                hangul_text_to_ascii(label) for label in starts
+            ]
+        if ends:
+            seq.metadata["bracket_end_labels"] = ends
         return seq
 
     def _translate_header(self, node: ExamNode) -> BrailleSequence:

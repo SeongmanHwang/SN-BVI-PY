@@ -6,9 +6,13 @@ import fitz
 import pytest
 
 from korean_exam_braille.app.daisy import ExamDtbookExporter, StubDtbookExporter
+from korean_exam_braille.app.exam.bracket_metadata import bracket_labels
 from korean_exam_braille.app.exam.stub import StubExamStructureBuilder
 from korean_exam_braille.app.pipeline import default_stub_pipeline
-from korean_exam_braille.app.session import ConversionWorkspace, PdfStructureService
+from korean_exam_braille.app.session import (
+    ConversionWorkspace,
+    PdfStructureService,
+)
 
 
 @pytest.fixture
@@ -24,6 +28,14 @@ def tiny_pdf(tmp_path: Path) -> Path:
 
 def test_stub_dtbook_not_available():
     assert StubDtbookExporter().available is False
+
+
+def test_bracket_labels_from_pdf_candidate_tags():
+    assert bracket_labels({"candidate_tags": ["bracket:[A],[B]"]}) == [
+        "[A]",
+        "[B]",
+    ]
+    assert bracket_labels({"candidate_tags": ["Question"]}) == []
 
 
 def test_workspace_convert_and_dtbook_download(tiny_pdf: Path):

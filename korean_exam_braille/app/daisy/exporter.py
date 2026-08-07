@@ -6,6 +6,7 @@ import hashlib
 import re
 from xml.etree.ElementTree import Element, SubElement, tostring
 
+from korean_exam_braille.app.exam.bracket_metadata import bracket_labels
 from korean_exam_braille.app.exam.models import ExamDocument, ExamNode
 
 _NS = "http://www.daisy.org/z3986/2005/dtbook/"
@@ -134,6 +135,11 @@ class ExamDtbookExporter:
         )
 
     def _emit_node(self, parent: Element, node: ExamNode, *, depth: int) -> None:
+        self._emit_bracket_markers(parent, node)
+        self._emit_node_body(parent, node, depth=depth)
+        self._emit_bracket_end_markers(parent, node)
+
+    def _emit_node_body(self, parent: Element, node: ExamNode, *, depth: int) -> None:
         ntype = node.node_type
         if ntype == "Question":
             self._emit_question(parent, node, depth=min(max(depth, 2), 6))
@@ -167,6 +173,38 @@ class ExamDtbookExporter:
 
         # 기타: 레벨로 감싸 자식 유지
         self._emit_level(parent, node, depth=min(max(depth, 1), 6))
+
+    def _emit_bracket_markers(self, parent: Element, node: ExamNode) -> None:
+        """BRF와 같은 Exam 메타를 사용해 구간 시작 표지를 XML에 낸다."""
+        for index, label in enumerate(
+            bracket_labels(node.metadata, starts_only=True),
+            start=1,
+        ):
+            marker = SubElement(
+                parent,
+                "p",
+                {
+                    "class": "BracketLabel",
+                    "id": _xml_id(f"{node.id}-bracket-{index}"),
+                },
+            )
+            marker.text = f"┌──── {label} ─────────────────┐"
+
+    def _emit_bracket_end_markers(self, parent: Element, node: ExamNode) -> None:
+        """BRF와 같은 Exam 메타를 사용해 구간 종료 표지를 XML에 낸다."""
+        for index, label in enumerate(
+            bracket_labels(node.metadata, ends_only=True),
+            start=1,
+        ):
+            marker = SubElement(
+                parent,
+                "p",
+                {
+                    "class": "BracketEndLabel",
+                    "id": _xml_id(f"{node.id}-bracket-end-{index}"),
+                },
+            )
+            marker.text = "└──────────────────────────────┘"
 
     def _emit_level(self, parent: Element, node: ExamNode, *, depth: int) -> None:
         depth = min(max(depth, 1), 6)
@@ -216,10 +254,12 @@ class ExamDtbookExporter:
             p = SubElement(el, "p", {"class": "Prompt"})
             p.text = text
         for child in prompts:
+            self._emit_bracket_markers(el, child)
             p = SubElement(el, "p", {"class": child.node_type, "id": _xml_id(child.id)})
             t = _text_of(child)
             if t:
                 p.text = t
+            self._emit_bracket_end_markers(el, child)
         for child in others:
             self._emit_node(el, child, depth=depth + 1)
         if choices:
@@ -229,10 +269,12 @@ class ExamDtbookExporter:
         lst = SubElement(parent, "list", {"type": "pl", "class": "Choices"})
         for choice in choices:
             li = SubElement(lst, "li", {"id": _xml_id(choice.id)})
+            self._emit_bracket_markers(li, choice)
             p = SubElement(li, "p", {"class": "Choice"})
             text = _text_of(choice)
             if text:
                 p.text = text
+            self._emit_bracket_end_markers(li, choice)
 
 
 # 하위 호환 별칭 (개발자 미리보기 경로)

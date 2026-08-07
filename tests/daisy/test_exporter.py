@@ -21,6 +21,11 @@ def _sample_exam() -> ExamDocument:
                             id="pass1",
                             node_type="Passage",
                             source_range=SourceRange(raw_text="지문 본문입니다."),
+                            metadata={
+                                "bracket_labels": ["[A]"],
+                                "bracket_start_labels": ["[A]"],
+                                "bracket_end_labels": ["[A]"],
+                            },
                         ),
                         ExamNode(
                             id="q16",
@@ -59,6 +64,10 @@ def test_exam_dtbook_structure():
     assert 'type="pl"' in xml
     assert "① 갑" in xml
     assert "<list" in xml
+    assert 'class="BracketLabel"' in xml
+    assert "──── [A] ────" in xml
+    assert 'class="BracketEndLabel"' in xml
+    assert "└────────" in xml
 
 
 def test_preview_alias_same_class():

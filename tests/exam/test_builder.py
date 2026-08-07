@@ -88,6 +88,36 @@ def test_validator_warns_on_choice_count():
     assert any("expected 5 choices" in w for w in warnings)
 
 
+def test_bracket_tags_become_common_exam_metadata():
+    blocks = [
+        _block("g", "[1~1] 글", order=0, tags=["PassageGroup"]),
+        _block(
+            "p1",
+            "학생1 발언",
+            order=1,
+            tags=["bracket:[A]", "bracket-start:[A]"],
+        ),
+        _block(
+            "p2",
+            "학생2 발언",
+            order=2,
+            tags=["bracket:[A]", "bracket-end:[A]"],
+        ),
+    ]
+    exam = RuleExamStructureBuilder().build(_doc(blocks))
+    passages = [
+        child
+        for group in exam.root.children
+        for child in group.children
+        if child.node_type == "Passage"
+    ]
+    assert passages[0].metadata["bracket_labels"] == ["[A]"]
+    assert passages[0].metadata["bracket_start_labels"] == ["[A]"]
+    assert passages[1].metadata["bracket_labels"] == ["[A]"]
+    assert "bracket_start_labels" not in passages[1].metadata
+    assert passages[1].metadata["bracket_end_labels"] == ["[A]"]
+
+
 def test_header_flushes_group():
     blocks = [
         _block("h", "국어 영역", order=0, tags=["Header"]),

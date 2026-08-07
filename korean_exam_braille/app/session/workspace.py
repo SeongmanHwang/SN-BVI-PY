@@ -8,12 +8,12 @@ from pathlib import Path
 
 from korean_exam_braille.app.daisy.exporter import ExamDtbookExporter
 from korean_exam_braille.app.daisy.ports import DtbookExporter
+from korean_exam_braille.app.exam.bracket_metadata import bracket_labels
 from korean_exam_braille.app.exam.models import ExamDocument
 from korean_exam_braille.app.exam.tree_text import format_exam_summary, format_exam_tree
 from korean_exam_braille.app.pdf.display_text import format_page_text_for_display
 from korean_exam_braille.app.pipeline.pipeline import PipelineResult
 from korean_exam_braille.app.session.pdf_structure import PdfStructureService
-
 
 @dataclass
 class ConversionWorkspace:
@@ -341,6 +341,9 @@ class ConversionWorkspace:
             qn = node.metadata.get("question_number")
             if qn is not None:
                 label = f"{node.node_type} #{qn}"
+            brackets = bracket_labels(node.metadata)
+            if brackets:
+                label = f"{label} · 구간 {', '.join(brackets)}"
             return {
                 "id": node.id,
                 "type": node.node_type,

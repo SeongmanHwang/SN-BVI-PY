@@ -25,10 +25,11 @@ def annotate_opaque_codepoints(text: str) -> str:
 
 
 def format_page_text_for_display(page: PdfPageStructure) -> str:
-    """읽기 순서 블록 텍스트 + 부분 밑줄 ``<u>…</u>`` 표시.
+    """읽기 순서 블록 텍스트 + 시각 구조 표시.
 
     변환 파이프라인의 ``block.text``에도 동일 마커가 들어가며, 점역기가
-    강조부호로 변환한다. 이 함수는 표시용 재구성( span 기준 )에 쓴다.
+    강조부호로 변환한다. 이 함수는 표시용 재구성(span 기준)에 쓰며,
+    꺾인 괄호의 소속 행은 앞에 ``[A]`` 등의 구간 표지를 붙인다.
     """
     spans_by_id = {s.id: s for s in page.spans}
     lines_by_id = {ln.id: ln for ln in page.lines}
@@ -55,6 +56,8 @@ def format_page_text_for_display(page: PdfPageStructure) -> str:
                 text = line.text or ""
             text = replace_opaque_with_slash(text).strip()
             if text:
+                if line.bracket_label:
+                    text = f"{line.bracket_label} {text}"
                 line_texts.append(text)
         if line_texts:
             parts.append("\n".join(line_texts))
