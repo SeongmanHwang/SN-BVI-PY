@@ -33,8 +33,12 @@ def test_student_in_quotes_after_bracket():
     assert r(hangul_text_to_ascii(src)) == src
 
 
-def test_emphasis_markers_stripped():
-    assert r(",-<30z-'") == "않은"
+def test_emphasis_markers_to_underline_tags():
+    """점역 강조부호(,- … -') → 역점역 <u>…</u>."""
+    assert r(",-<30z-'") == "<u>않은</u>"
+    assert r(hangul_text_to_ascii("<u>차자 표기</u>")) == "<u>차자 표기</u>"
+    # ㉠ → 드러냄+자모(‘ㄱ’); 밑줄 구간만 <u>로 복원
+    assert "<u>차자 표기</u>" in r(hangul_text_to_ascii("㉠<u>차자 표기</u>"))
 
 
 def test_passage_range_not_confused_with_bracket():

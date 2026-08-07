@@ -51,6 +51,42 @@ def test_page_break_and_form_feed():
     assert "\x0c" in text
 
 
+def test_continuation_page_does_not_drop_lines():
+    """이어지는 면 앞 빈 줄 삽입이 본문 줄을 절단·유실하면 안 된다."""
+    from korean_exam_braille.app.braille.translator import hangul_text_to_ascii
+    from korean_exam_braille.app.brf.reverse_translator import reverse_translate_line
+
+    engine = RuleBrailleLayoutEngine()
+    # 면당 5줄: 빈 줄 삽입 시 예전 코드는 마지막 줄을 버림
+    profile = LayoutProfile(cells_per_line=32, lines_per_page=5, paragraph_indent=2)
+    fill = hangul_text_to_ascii("줄")
+    target = hangul_text_to_ascii(
+        "으로 표기해야 일관성이 있겠지요? 하지만 당시에 ‘윽, 읃, 읏’으로 "
+        "소리 나는 한자가 없었습니다. 그래서 ‘ㄱ’은 ‘윽’을 대"
+    )
+    seqs = [_seq(fill, "Passage", node_id=f"f{i}") for i in range(6)]
+    seqs.append(_seq(target, "Passage", node_id="t"))
+    doc = engine.layout(seqs, profile=profile)
+
+    ascii_lines = [
+        ln.ascii_text
+        for page in doc.pages
+        for ln in page.lines
+        if ln.ascii_text is not None
+    ]
+    # 점역 ASCII에 있던 핵심 구간이 레이아웃 후에도 남아 있어야 한다
+    joined = "\n".join(ascii_lines)
+    assert "['0'[" in joined or "0'[" in joined
+    rev = "\n".join(
+        reverse_translate_line(s) for s in ascii_lines if s.strip()
+    )
+    assert "읏" in rev
+    assert "으로 소리" in rev.replace("\n", "")
+    # 모든 비어 있지 않은 입력 줄 수가 출력에서 유지되는지 (시작 빈 줄·면 빈 줄 제외한 하한)
+    content_in = sum(1 for s in ascii_lines if s.strip())
+    assert content_in >= 8
+
+
 def test_separator_after_passage_group():
     engine = RuleBrailleLayoutEngine()
     doc = engine.layout(

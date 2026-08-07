@@ -72,6 +72,24 @@ def _is_boundary(ch: str | None) -> bool:
     return ch is None or ch == " "
 
 
+def _out_word_hangul_count(out: list[str] | None) -> int:
+    """출력 버퍼에서 직전 공백 이후 한글 음절 수."""
+    if not out:
+        return 0
+    n = 0
+    for ch in reversed(out):
+        if ch == " ":
+            break
+        if len(ch) == 1 and "\uac00" <= ch <= "\ud7a3":
+            n += 1
+            continue
+        if ch in {"‘", "’", "“", "”", "「", "」", "『", "』", "〈", "〉", "《", "》"}:
+            continue
+        if ch:
+            break
+    return n
+
+
 def _is_separator_line(text: str) -> bool:
     s = text.strip()
     if len(s) < 6:
@@ -152,10 +170,11 @@ def _match_punct(chars: list[str], i: int) -> tuple[str, int] | None:
 
 
 def _try_circled_digit(chars: list[str], i: int, out: list[str]) -> int | None:
-    """원문자 선택지 번호.
+    """원문자 선택지 번호·원문자 라틴.
 
     - 관례 A: 7#a7 … 7#e7 → ①…⑤ (정방향 인코딩)
     - 관례 B: #1 … #5 (⠼⠂…⠼⠢) → ①…⑤ (참고 시험지 BRF)
+    - 관례 C: 7a7 … 7z7 → ⓐ…ⓩ (수표 없는 드러냄+글자)
     """
     # A) 7#a7
     if _slice_norm(chars, i, 2) == "7#":
@@ -168,6 +187,17 @@ def _try_circled_digit(chars: list[str], i: int, out: list[str]) -> int | None:
             return None
         out.append("①②③④⑤"["abcde".index(dig)])
         return i + 4
+
+    # C) 7a7 … 7z7 → ⓐ…ⓩ (①용 7#a7 보다 뒤에 두어 # 있는 쪽을 우선)
+    if _norm_cell(chars[i]) == "7" and i + 2 < len(chars):
+        mid = _norm_cell(chars[i + 1])
+        if mid in "abcdefghijklmnopqrstuvwxyz" and _norm_cell(chars[i + 2]) == "7":
+            out.append(
+                "ⓐⓑⓒⓓⓔⓕⓖⓗⓘⓙⓚⓛⓜⓝⓞⓟⓠⓡⓢⓣⓤⓥⓦⓧⓨⓩ"[
+                    "abcdefghijklmnopqrstuvwxyz".index(mid)
+                ]
+            )
+            return i + 3
 
     # B) #1 … #5 (수표 뒤 하부 점형 — 일반 숫자 a–j 와 구분)
     if _norm_cell(chars[i]) == NUMBER_SIGN and i + 1 < len(chars):
@@ -238,11 +268,17 @@ def _take_final(
     i: int,
     *,
     skip_jong: frozenset[str] | None = None,
+    out: list[str] | None = None,
 ) -> tuple[str, int, bool] | None:
     """(종성 또는 문장부호, 새 인덱스, 문장부호 여부).
 
     닫는 복합 부호 시작이면 종성으로 가져가지 않는다.
     skip_jong: 드러냄표(7) 등 종성으로 쓰지 않을 셀.
+
+    종성 ㅍ과 마침표는 동일 셀(ASCII ``4``):
+      - 점역: 두 음절 이하 어절 뒤 마침표 앞에 공백을 넣음
+      - 역점역: 공백 없이 짧은 어절(완성 중 포함 ≤2음절) 뒤 ``4`` → 종성 ㅍ,
+                세 음절 이상 어절 뒤 ``4`` → 마침표
     """
     if i >= len(chars):
         return None
@@ -262,8 +298,16 @@ def _take_final(
         if not _starts_closing_multi(chars, i + 1):
             return JONGSEONG_DIGRAPHS[n + nxt], i + 2, False
 
+    # 마침표(4) ↔ 종성 ㅍ(4) — 어절 음절 수로 구분
+    if n == "4" and _is_boundary(nxt):
+        # +1: 지금 조립 중인 음절
+        word_syl = _out_word_hangul_count(out) + 1
+        if word_syl <= 2:
+            return JONGSEONG["4"], i + 1, False
+        return ".", i + 1, True
+
     # 문장 끝 구두점 (종성과 동일 셀) — 다음이 경계일 때만
-    if n in PUNCT_SINGLE and n in {"4", "6", "8"} and _is_boundary(nxt):
+    if n in PUNCT_SINGLE and n in {"6", "8"} and _is_boundary(nxt):
         return PUNCT_SINGLE[n], i + 1, True
 
     # 종성 ㅎ(0) — 다음에 닫는 따옴표 2칸이 오면 종성 아님(위에서 처리)
@@ -310,7 +354,7 @@ def _emit_syllable_with_optional_final(
     *,
     skip_jong: frozenset[str] | None = None,
 ) -> int:
-    final = _take_final(chars, i_after_vowel, skip_jong=skip_jong)
+    final = _take_final(chars, i_after_vowel, skip_jong=skip_jong, out=out)
     if final is None:
         out.append(_syllable(cho, jung))
         return i_after_vowel
@@ -349,7 +393,7 @@ def _emit_abbrev_cv(
     skip_jong: frozenset[str] | None = None,
 ) -> int:
     cho, jung = ABBREV_CV[cell]
-    final = _take_final(chars, i + 1, skip_jong=skip_jong)
+    final = _take_final(chars, i + 1, skip_jong=skip_jong, out=out)
     if final is None:
         out.append(_syllable(cho, jung))
         return i + 1
@@ -851,6 +895,9 @@ def reverse_translate_line(raw_ascii: str) -> str:
                     open_quote_depth += 1
                     i += 1
                     continue
+            # 마침표 앞 공백은 점역의 ㅍ·마침표 구분용 → 묵자에서는 제거
+            if n == "4" and out and out[-1] == " ":
+                out.pop()
             out.append(PUNCT_SINGLE[n])
             i += 1
             continue

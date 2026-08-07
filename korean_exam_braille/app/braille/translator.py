@@ -60,6 +60,12 @@ _VC_ABBREV: dict[tuple[str, str], str] = {
 
 _DIGIT_TO_ASCII: dict[str, str] = {v: k for k, v in NUMBER_MAP.items()}
 
+# 종성 ㅍ과 마침표는 같은 점자 셀(ASCII ``4``).
+# 점역 규칙: 두 음절 이하 한글 어절 뒤 마침표 앞에 공백을 넣어 종성 ㅍ과 구분한다.
+# 역점역 규칙: 공백 없이 짧은 어절(≤2음절) 뒤의 ``4`` → 종성 ㅍ,
+#               긴 어절(≥3) 뒤이거나 공백 뒤의 ``4`` → 마침표.
+_PERIOD_JONG_DISAMBIG_MAX_SYL = 2
+
 _PUNCT_TO_ASCII: dict[str, str] = {
     ".": "4",
     "!": "6",
@@ -113,6 +119,36 @@ _CIRCLED_DIGIT_CELL = {
     "③": "c",
     "④": "d",
     "⑤": "e",
+}
+
+# ⓐ–ⓩ (원문자 라틴) → 드러냄+글자. ①용 7#a7·ⓒ 관례 7c7 과 동일 계열.
+_CIRCLED_LATIN_CELL = {
+    "ⓐ": "a",
+    "ⓑ": "b",
+    "ⓒ": "c",
+    "ⓓ": "d",
+    "ⓔ": "e",
+    "ⓕ": "f",
+    "ⓖ": "g",
+    "ⓗ": "h",
+    "ⓘ": "i",
+    "ⓙ": "j",
+    "ⓚ": "k",
+    "ⓛ": "l",
+    "ⓜ": "m",
+    "ⓝ": "n",
+    "ⓞ": "o",
+    "ⓟ": "p",
+    "ⓠ": "q",
+    "ⓡ": "r",
+    "ⓢ": "s",
+    "ⓣ": "t",
+    "ⓤ": "u",
+    "ⓥ": "v",
+    "ⓦ": "w",
+    "ⓧ": "x",
+    "ⓨ": "y",
+    "ⓩ": "z",
 }
 
 # ㉠–㉭ (원문자 ㄱ–ㅎ) → 드러냄+온표자모. 참고 BRF: ㉠차자 → 7=a7,-…-'
@@ -227,6 +263,16 @@ def _is_hangul(ch: str) -> bool:
     return decompose_hangul(ch) is not None
 
 
+def _trailing_hangul_syllables(text: str, end: int) -> int:
+    """``text[:end]`` 끝에서 이어지는 한글 음절 수 (어절)."""
+    n = 0
+    j = end - 1
+    while j >= 0 and decompose_hangul(text[j]) is not None:
+        n += 1
+        j -= 1
+    return n
+
+
 def hangul_text_to_ascii(text: str) -> str:
     """묵자 문자열 → Braille ASCII (개행 보존).
 
@@ -301,6 +347,12 @@ def _hangul_body_to_ascii(text: str) -> str:
         if ch in _CIRCLED_DIGIT_CELL:
             # 원문자 번호: 7#a7 … (일반 수표 #a 와 구분)
             out.append("7#" + _CIRCLED_DIGIT_CELL[ch] + "7")
+            i += 1
+            continue
+
+        if ch in _CIRCLED_LATIN_CELL:
+            # ⓐ–ⓔ: 드러냄+라틴 글자 (7a7 …). ①의 7#a7·로마자표 0a 와 구분.
+            out.append("7" + _CIRCLED_LATIN_CELL[ch] + "7")
             i += 1
             continue
 
@@ -388,6 +440,14 @@ def _hangul_body_to_ascii(text: str) -> str:
             continue
 
         if ch in _PUNCT_TO_ASCII:
+            # 마침표(4) ↔ 종성 ㅍ(4): 두 음절 이하 어절 뒤면 앞에 공백.
+            if ch == ".":
+                syl = _trailing_hangul_syllables(text, i)
+                if (
+                    1 <= syl <= _PERIOD_JONG_DISAMBIG_MAX_SYL
+                    and (not out or out[-1] != " ")
+                ):
+                    out.append(" ")
             out.append(_PUNCT_TO_ASCII[ch])
             i += 1
             continue

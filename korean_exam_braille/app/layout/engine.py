@@ -164,18 +164,30 @@ class RuleBrailleLayoutEngine:
 
             prev_type = node_type
 
-        # 면 분할: top/bottom margin 빈 줄은 이미 문서 시작에 반영. usable 전체 높이.
+        # 면 분할: 첫 면은 이미 선행 빈 줄이 있다.
+        # 이어지는 면에도 시작 빈 줄을 넣되, 예전의 [:usable] 절단처럼
+        # 본문 줄을 버리지 않도록 빈 줄만큼 용량을 미리 뺀다.
         usable = max(1, prof.lines_per_page)
         pages: list[BraillePage] = []
         if not lines:
             pages.append(BraillePage(page_index=0, lines=[]))
         else:
-            for i in range(0, len(lines), usable):
-                chunk = lines[i : i + usable]
-                # 이어지는 면 시작에도 빈 줄 하나 (첫 면은 이미 있음)
-                if i > 0 and (not chunk or chunk[0].ascii_text != ""):
-                    chunk = [_blank(), *chunk][:usable]
-                pages.append(BraillePage(page_index=len(pages), lines=chunk))
+            i = 0
+            while i < len(lines):
+                page_lines: list[BrailleLine] = []
+                slots = usable
+                cont = bool(pages)
+                # 이어지는 면: 앞에 빈 줄 (이미 빈 줄로 시작하면 중복하지 않음)
+                if cont and (lines[i].ascii_text or "") != "":
+                    if usable > 1:
+                        page_lines.append(_blank())
+                        slots = usable - 1
+                    # usable==1 이면 빈 줄 대신 본문만 넣어 유실을 막는다.
+                page_lines.extend(lines[i : i + slots])
+                i += slots
+                pages.append(
+                    BraillePage(page_index=len(pages), lines=page_lines)
+                )
 
         return BrailleDocument(
             pages=pages,

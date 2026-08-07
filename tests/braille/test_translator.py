@@ -65,6 +65,26 @@ def test_circled_choice_to_marked_digit():
     assert reverse_translate_line("7#e7") == "⑤"
 
 
+def test_circled_latin_a_to_e():
+    """ⓐ–ⓩ → 7a7…7z7 (①의 7#a7 과 구분)."""
+    assert hangul_text_to_ascii("ⓐ") == "7a7"
+    assert hangul_text_to_ascii("ⓔ") == "7e7"
+    assert hangul_text_to_ascii("ⓒ") == "7c7"
+    assert hangul_text_to_ascii("ⓕ") == "7f7"
+    assert hangul_text_to_ascii("ⓩ") == "7z7"
+    assert reverse_translate_line("7a7") == "ⓐ"
+    assert reverse_translate_line("7e7") == "ⓔ"
+    assert reverse_translate_line("7f7") == "ⓕ"
+    assert reverse_translate_line("7z7") == "ⓩ"
+    src = "된 가상의 문장에서 ⓐ~ ⓔ를 분석해 볼까요?"
+    assert "7a7" in hangul_text_to_ascii(src)
+    assert "7e7" in hangul_text_to_ascii(src)
+    back = reverse_translate_line(hangul_text_to_ascii(src))
+    assert "ⓐ" in back and "ⓔ" in back
+    assert hangul_text_to_ascii("ⓕ~ⓩ") == "7f7@97z7"
+    assert reverse_translate_line("7f7@97z7") == "ⓕ~ⓩ"
+
+
 def test_circled_hangul_and_underline_emphasis():
     """참고 BRF: ㉠<u>차자 표기</u> → 7=a7,-;<. d+`o-'"""
     assert hangul_text_to_ascii("㉠") == "7=a7"
