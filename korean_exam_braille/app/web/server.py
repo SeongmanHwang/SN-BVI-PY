@@ -60,8 +60,7 @@ def create_app(*, workspace: ConversionWorkspace | None = None) -> Starlette:
                 "ok": True,
                 "message": (
                     f"{meta['name']}을(를) 올렸습니다. "
-                    f"{meta['page_count']}면 중 {meta['extracted_pages']}면을 준비했습니다. "
-                    "이제 분석 및 변환을 실행할 수 있습니다."
+                    f"{meta['page_count']}면 중 {meta['extracted_pages']}면을 준비했습니다."
                 ),
                 "meta": meta,
                 "status": ws.status_snapshot(),
@@ -92,6 +91,57 @@ def create_app(*, workspace: ConversionWorkspace | None = None) -> Starlette:
             {
                 "ok": True,
                 "message": msg,
+                "status": ws.status_snapshot(),
+            }
+        )
+
+    async def api_upload_and_convert(request: Request) -> JSONResponse:
+        """사용자 모드 — 선택·업로드·분석·점역을 한 요청으로 처리."""
+        form = await request.form()
+        upload = form.get("file")
+        if upload is None:
+            return JSONResponse(
+                {"ok": False, "message": "PDF 파일이 없습니다."},
+                status_code=400,
+            )
+        filename = getattr(upload, "filename", None) or "upload.pdf"
+        data = await upload.read()  # type: ignore[union-attr]
+        if not data:
+            return JSONResponse(
+                {"ok": False, "message": "빈 파일입니다."},
+                status_code=400,
+            )
+        try:
+            meta = ws.load_pdf_bytes(data, filename=str(filename))
+        except Exception as exc:  # noqa: BLE001
+            return JSONResponse(
+                {"ok": False, "message": f"PDF를 열 수 없습니다. {exc}"},
+                status_code=400,
+            )
+        try:
+            result = ws.analyze_and_convert()
+        except Exception as exc:  # noqa: BLE001
+            return JSONResponse(
+                {
+                    "ok": False,
+                    "message": f"PDF는 올렸으나 변환에 실패했습니다. {exc}",
+                    "meta": meta,
+                    "status": ws.status_snapshot(),
+                },
+                status_code=500,
+            )
+        warn_n = len(result.warnings)
+        pages = len(result.braille_document.pages)
+        msg = (
+            f"{meta['name']} 변환 완료. 점자 {pages}면"
+            + (f", 경고 {warn_n}건" if warn_n else "")
+            + ". BRF와 DTBook XML을 받을 수 있습니다."
+        )
+        return JSONResponse(
+            {
+                "ok": True,
+                "message": msg,
+                "meta": meta,
                 "status": ws.status_snapshot(),
             }
         )
@@ -279,6 +329,7 @@ def create_app(*, workspace: ConversionWorkspace | None = None) -> Starlette:
         Route("/api/status", api_status),
         Route("/api/upload", api_upload, methods=["POST"]),
         Route("/api/convert", api_convert, methods=["POST"]),
+        Route("/api/upload-and-convert", api_upload_and_convert, methods=["POST"]),
         Route("/api/download/brf", api_download_brf),
         Route("/api/download/dtbook", api_download_dtbook),
         Route("/api/dev/bundle", api_dev_bundle),

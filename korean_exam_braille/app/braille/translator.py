@@ -27,6 +27,7 @@ from korean_exam_braille.app.brf.korean_tables import (
     WORD_ABBREV,
 )
 from korean_exam_braille.app.exam.models import ExamDocument, ExamNode
+from korean_exam_braille.app.common.opaque_text import replace_opaque_with_slash
 
 # 묵자 → ASCII (표 반전). 국내 BRF는 초성 ㄱ을 ` 로 씀.
 _CHO_TO_ASCII: dict[str, str] = {v: k for k, v in CHOSEONG.items()}
@@ -96,7 +97,7 @@ _PUNCT_TO_ASCII: dict[str, str] = {
     "―": "--",
     "—": "--",
     "–": "--",
-    "/": "/",
+    "/": "_/",  # 빗금 — 단독 `/`는 ㅖ·ㅆ과 충돌하므로 ⠸⠌
     "=": "=",
     "*": "99",
     "※": "99",
@@ -202,7 +203,11 @@ def _is_hangul(ch: str) -> bool:
 
 
 def hangul_text_to_ascii(text: str) -> str:
-    """묵자 문자열 → Braille ASCII (개행 보존)."""
+    """묵자 문자열 → Braille ASCII (개행 보존).
+
+    PUA 등 불투명 코드포인트는 빗금(/)으로 바꾼 뒤 점역한다.
+    """
+    text = replace_opaque_with_slash(text)
     chunks: list[str] = []
     for line in text.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
         chunks.append(_encode_line(line))
@@ -257,13 +262,24 @@ def _hangul_body_to_ascii(text: str) -> str:
             continue
 
         if ch.isdigit():
+            digit_start = i
             digits: list[str] = []
             while i < n and text[i].isdigit():
                 digits.append(_DIGIT_TO_ASCII[text[i]])
                 i += 1
             out.append(NUMBER_SIGN + "".join(digits))
-            # 수표 구간은 a–j 만 소비하므로 뒤 한글과 붙어도 역점역에 문제 없음.
-            # ([3점] → 82#c.s5;0, 공백 삽입 시 '3 점'으로 어색)
+            # 수표 구간 종료: 뒤에 글자가 이어지면 빈칸 하나.
+            # 이미 공백·구두점이면 생략. [3점] 등 대괄호 안 점수 표기는
+            # 참고 BRF(82#c.s5;0)처럼 숫자·단위를 붙인다.
+            if i < n and text[i] not in " \t":
+                nxt = text[i]
+                after_open_bracket = digit_start > 0 and text[digit_start - 1] in "[【"
+                attach_punct = nxt in _PUNCT_TO_ASCII
+                if not (
+                    attach_punct
+                    or (after_open_bracket and _is_hangul(nxt))
+                ):
+                    out.append(" ")
             continue
 
         if ("A" <= ch <= "Z") or ("a" <= ch <= "z"):

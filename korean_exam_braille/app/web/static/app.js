@@ -1,13 +1,18 @@
 (() => {
   const statusEl = document.getElementById("status");
   const alertEl = document.getElementById("alert");
-  const uploadForm = document.getElementById("upload-form");
-  const btnConvert = document.getElementById("btn-convert");
-  const convertWhy = document.getElementById("convert-why");
+  const fileInput = document.getElementById("pdf-file");
+  const fileNameEl = document.getElementById("file-name");
   const btnBrf = document.getElementById("btn-brf");
   const brfWhy = document.getElementById("brf-why");
   const btnDtbook = document.getElementById("btn-dtbook");
   const dtbookWhy = document.getElementById("dtbook-why");
+  const fileButton = document.querySelector(".file-button");
+
+  if (!fileInput || !statusEl || !alertEl || !btnBrf || !btnDtbook) {
+    console.error("사용자 모드 UI 요소를 찾지 못했습니다. 페이지를 새로고침하세요.");
+    return;
+  }
 
   function setStatus(message, { focus = true } = {}) {
     alertEl.hidden = true;
@@ -21,28 +26,39 @@
   function setAlert(message) {
     alertEl.hidden = false;
     alertEl.textContent = message;
-    alertEl.focus?.();
+    try {
+      alertEl.focus();
+    } catch (_) {
+      /* ignore */
+    }
+  }
+
+  function setBusy(busy) {
+    fileInput.disabled = busy;
+    if (fileButton) {
+      fileButton.classList.toggle("is-busy", busy);
+      fileButton.setAttribute("aria-busy", busy ? "true" : "false");
+    }
   }
 
   function applyStatus(snapshot) {
-    btnConvert.disabled = !snapshot.has_pdf;
-    convertWhy.textContent = snapshot.has_pdf
-      ? "업로드한 파일로 분석과 점역을 시작합니다."
-      : "PDF를 먼저 업로드하세요.";
-
     const brfReady = !!snapshot.has_brf;
     btnBrf.setAttribute("aria-disabled", brfReady ? "false" : "true");
     btnBrf.tabIndex = brfReady ? 0 : -1;
-    brfWhy.textContent = brfReady
-      ? "변환된 BRF 파일을 받습니다."
-      : "먼저 분석 및 변환을 실행하세요.";
+    if (brfWhy) {
+      brfWhy.textContent = brfReady
+        ? "변환된 BRF 파일을 받습니다."
+        : "먼저 PDF를 선택해 변환하세요.";
+    }
 
     const dtReady = !!snapshot.dtbook_download_available;
     btnDtbook.setAttribute("aria-disabled", dtReady ? "false" : "true");
     btnDtbook.tabIndex = dtReady ? 0 : -1;
-    dtbookWhy.textContent = dtReady
-      ? "DAISY 제작용 중간 구조(DTBook 2005-3) XML을 받습니다."
-      : "먼저 분석 및 변환을 실행하세요.";
+    if (dtbookWhy) {
+      dtbookWhy.textContent = dtReady
+        ? "DAISY 제작용 중간 구조(DTBook 2005-3) XML을 받습니다."
+        : "먼저 PDF를 선택해 변환하세요.";
+    }
   }
 
   async function refreshStatus() {
@@ -51,51 +67,56 @@
     applyStatus(data);
   }
 
-  uploadForm.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const fileInput = document.getElementById("pdf-file");
-    if (!fileInput.files || !fileInput.files[0]) {
-      setAlert("PDF 파일을 선택하세요.");
-      return;
+  async function uploadAndConvert(file) {
+    setBusy(true);
+    if (fileNameEl) {
+      fileNameEl.textContent = `선택한 파일: ${file.name}`;
     }
-    setStatus("PDF를 올리는 중…");
+    setStatus("PDF를 올리고 분석·점역하는 중…");
     const body = new FormData();
-    body.append("file", fileInput.files[0]);
+    body.append("file", file);
     try {
-      const res = await fetch("/api/upload", { method: "POST", body });
-      const data = await res.json();
-      if (!data.ok) {
-        setAlert(data.message || "업로드에 실패했습니다.");
+      const res = await fetch("/api/upload-and-convert", {
+        method: "POST",
+        body,
+      });
+      let data;
+      try {
+        data = await res.json();
+      } catch (_) {
+        setAlert(
+          res.status === 404
+            ? "서버 API를 찾을 수 없습니다. 웹 서버를 다시 시작해 주세요."
+            : "서버 응답을 읽지 못했습니다."
+        );
+        await refreshStatus().catch(() => {});
         return;
       }
-      applyStatus(data.status);
-      setStatus(data.message);
-      btnConvert.focus();
-    } catch (err) {
-      setAlert("업로드 중 오류가 발생했습니다.");
-    }
-  });
-
-  btnConvert.addEventListener("click", async () => {
-    setStatus("PDF 분석 및 점역 변환 중…");
-    btnConvert.disabled = true;
-    try {
-      const res = await fetch("/api/convert", { method: "POST" });
-      const data = await res.json();
       if (!data.ok) {
-        applyStatus(await (await fetch("/api/status")).json());
+        await refreshStatus().catch(() => {});
         setAlert(data.message || "변환에 실패했습니다.");
         return;
       }
       applyStatus(data.status);
       setStatus(data.message);
-      if (data.status.has_brf) {
+      if (data.status && data.status.has_brf) {
         btnBrf.focus();
       }
     } catch (err) {
-      await refreshStatus();
-      setAlert("변환 중 오류가 발생했습니다.");
+      await refreshStatus().catch(() => {});
+      setAlert("업로드·변환 중 오류가 발생했습니다.");
+    } finally {
+      setBusy(false);
+      fileInput.value = "";
     }
+  }
+
+  fileInput.addEventListener("change", () => {
+    const file = fileInput.files && fileInput.files[0];
+    if (!file) {
+      return;
+    }
+    uploadAndConvert(file);
   });
 
   btnBrf.addEventListener("click", (event) => {

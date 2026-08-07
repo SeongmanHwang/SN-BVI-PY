@@ -229,6 +229,34 @@
     return `/api/dev/pdf-page/${pageNumber}`;
   }
 
+  function braillePartsForPdf(pdfPageNumber) {
+    if (!cache) return [];
+    const key = String(pdfPageNumber);
+    let indices =
+      (cache.pdfToBraille && cache.pdfToBraille[key]) || [];
+    if (!indices.length) {
+      // 구버전 폴백: 같은 배열 인덱스
+      const idx = cache.pdfPages.findIndex(
+        (p) => p.page_number === pdfPageNumber
+      );
+      if (idx >= 0 && cache.braillePages[idx]) indices = [idx];
+    }
+    return indices
+      .map((i) => cache.braillePages[i])
+      .filter(Boolean);
+  }
+
+  function joinBrailleParts(parts, field) {
+    if (!parts.length) return "";
+    if (parts.length === 1) return parts[0][field] || "";
+    return parts
+      .map((p) => {
+        const label = `── 점자 ${p.index}면 ──`;
+        return `${label}\n${p[field] || ""}`;
+      })
+      .join("\n\n");
+  }
+
   function showLinkedPage(pageIndex) {
     if (!cache || cache.pdfPages.length === 0) return;
     const idx = Math.max(0, Math.min(pageIndex, cache.pdfPages.length - 1));
@@ -236,7 +264,7 @@
     pageSelect.value = String(idx);
 
     const pdf = cache.pdfPages[idx];
-    const brl = cache.braillePages[idx];
+    const parts = braillePartsForPdf(pdf.page_number);
     const url = pdfUrl(pdf.page_number);
     pdfImgA.src = url;
     pdfImgB.src = url;
@@ -247,29 +275,50 @@
     document.getElementById("pdf-text-b").textContent =
       pdf.text || "(텍스트 없음)";
 
-    if (brl) {
-      document.getElementById("brf-text").textContent = brl.unicode;
-      document.getElementById("reverse-text").textContent = brl.reverse;
+    const brfMeta = document.getElementById("brf-page-meta");
+    const revMeta = document.getElementById("reverse-page-meta");
+    if (parts.length) {
+      document.getElementById("brf-text").textContent = joinBrailleParts(
+        parts,
+        "unicode"
+      );
+      document.getElementById("reverse-text").textContent = joinBrailleParts(
+        parts,
+        "reverse"
+      );
+      const nums = parts.map((p) => p.index).join(", ");
+      const meta =
+        parts.length > 1
+          ? `이 PDF 면에 점자 ${parts.length}면 (면 ${nums})`
+          : `점자 ${parts[0].index}면`;
+      if (brfMeta) brfMeta.textContent = meta;
+      if (revMeta) revMeta.textContent = meta;
     } else {
       document.getElementById("brf-text").textContent =
-        "(이 면에 대응하는 점자 없음)";
+        "(이 PDF 면에 대응하는 점자 없음)";
       document.getElementById("reverse-text").textContent =
-        "(이 면에 대응하는 역점역 없음)";
+        "(이 PDF 면에 대응하는 역점역 없음)";
+      if (brfMeta) brfMeta.textContent = "";
+      if (revMeta) revMeta.textContent = "";
     }
 
     if (pdfImgB.complete) paintOverlay();
     else pdfImgB.addEventListener("load", () => paintOverlay(), { once: true });
+    updateStatusLine();
   }
 
   function updateStatusLine() {
     if (!cache) return;
     const name = (cache.status && cache.status.source_name) || "문서";
     const warn = (cache.warnings && cache.warnings.length) || 0;
+    const pdf = cache.pdfPages[cache.pageIndex];
+    const parts = pdf ? braillePartsForPdf(pdf.page_number) : [];
     setStatus(
       `${name} · 원문 ${cache.pdfPages.length}면` +
         (cache.braillePages.length !== cache.pdfPages.length
           ? ` · 점자 ${cache.braillePages.length}면`
           : "") +
+        (parts.length > 1 ? ` · 현재 PDF에 점자 ${parts.length}면` : "") +
         (warn ? ` · 경고 ${warn}건` : "") +
         " · 읽기 전용 진단입니다."
     );
@@ -316,6 +365,7 @@
       cache = {
         pdfPages,
         braillePages,
+        pdfToBraille: data.pdf_to_braille || {},
         pageIndex: startIndex,
         examTree: data.exam_tree || null,
         selectedNodeId: null,

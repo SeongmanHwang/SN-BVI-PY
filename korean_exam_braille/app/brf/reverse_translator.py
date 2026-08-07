@@ -248,6 +248,9 @@ def _take_final(
         return None
     if _starts_closing_multi(chars, i):
         return None
+    # 회( → jy8' 에서 8을 종성 ㅌ으로 먹으면 안 됨. 8' = (
+    if _match_punct(chars, i) is not None:
+        return None
 
     n = _norm_cell(chars[i])
     if skip_jong and n in skip_jong:

@@ -8,6 +8,8 @@ import fitz
 
 from korean_exam_braille.app.pdf.block_builder import build_blocks
 from korean_exam_braille.app.pdf.candidates import detect_block_candidates
+from korean_exam_braille.app.common.opaque_text import replace_opaque_with_slash
+from korean_exam_braille.app.pdf.emphasis import mark_underlined_spans
 from korean_exam_braille.app.pdf.layout_profile import PageLayoutProfile, infer_layout_profile
 from korean_exam_braille.app.pdf.line_builder import build_lines
 from korean_exam_braille.app.pdf.models import (
@@ -35,7 +37,7 @@ def extract_page_spans(page: fitz.Page, page_number: int) -> list[PdfSpan]:
             continue
         for line in block.get("lines", []):
             for span in line.get("spans", []):
-                text = span.get("text") or ""
+                text = replace_opaque_with_slash(span.get("text") or "")
                 if text == "":
                     continue
                 bbox = tuple(float(x) for x in span["bbox"])
@@ -52,6 +54,7 @@ def extract_page_spans(page: fitz.Page, page_number: int) -> list[PdfSpan]:
                         is_bold=_is_bold(flags, font),
                         page_number=page_number,
                         extraction_index=index,
+                        is_underline=False,
                     )
                 )
                 index += 1
@@ -66,6 +69,7 @@ def build_page_structure(
 ) -> PdfPageStructure:
     rect = page.rect
     spans = extract_page_spans(page, page_number)
+    mark_underlined_spans(page, spans)
     lines = build_lines(
         spans,
         page_number,

@@ -8,7 +8,7 @@
 | [ui_shell.md](ui_shell.md) | 제품 모드(웹 사용자·개발자 A/B), 세션 경계·a11y·체크리스트 |
 | [reverse_translation.md](reverse_translation.md) | 역점역 모듈 구조·처리 순서·시험지 토큰·테스트 |
 | [quality_loop.md](quality_loop.md) | 참고 BRF 정합을 위한 개발·테스트 루프 (문서 수동 편집 최소화) |
-| [guidance_policy.md](guidance_policy.md) | 시각장애용 안내 문구 삽입·양식 일치 정책 |
+| [guidance_policy.md](guidance_policy.md) | 시각장애용 안내 삽입·양식 일치 · 밑줄 등 강조의 점자 추가 정보화 |
 | [../README.md](../README.md) | 설치·실행·현재 프로토타입 상태 |
 
 ## Phase 0 분석 노트 (규칙 축적)

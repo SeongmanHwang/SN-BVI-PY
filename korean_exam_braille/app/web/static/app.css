@@ -118,6 +118,50 @@ input[type="file"] {
   margin-bottom: 0.75rem;
 }
 
+.open-convert {
+  margin: 0.5rem 0 0.75rem;
+}
+
+.file-button {
+  position: relative;
+  display: inline-block;
+  font: inherit;
+  font-weight: 600;
+  padding: 0.65rem 1.1rem;
+  border: 2px solid var(--btn);
+  border-radius: 0.3rem;
+  background: var(--btn);
+  color: var(--btn-ink);
+  cursor: pointer;
+}
+
+.file-button input[type="file"] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+  font-size: 0;
+}
+
+.file-button.is-busy {
+  background: transparent;
+  color: var(--disabled);
+  border-color: var(--disabled);
+  cursor: not-allowed;
+}
+
+.file-button.is-busy input[type="file"] {
+  pointer-events: none;
+}
+
+.file-button:focus-within {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+
 button,
 a.button {
   display: inline-block;

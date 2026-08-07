@@ -15,8 +15,7 @@
 
 | 조작 | 동작 |
 |------|------|
-| PDF 업로드 | 작업 세션에 PDF 적재 |
-| 분석 및 변환 | `ConversionWorkspace.analyze_and_convert()` |
+| PDF 선택 및 변환 | 파일 선택 → `load_pdf` → `analyze_and_convert()` (한 버튼) |
 | BRF 다운로드 | 마지막 변환 결과 |
 | DTBook XML 다운로드 | DAISY용 중간 구조 (**DTBook 2005-3**, 패키지 아님) |
 
@@ -30,6 +29,8 @@
 |------|------|
 | A | 원문 PDF(읽기 전용) · BRF · 역점역 |
 | B | 원문 PDF(읽기 전용) · 구조 계층 · **DTBook XML** |
+
+모드 A 면 선택은 **PDF 기준**. 한 PDF 면에 점자 면이 여러 장이면 BRF·역점역을 묶어 표시하고 (`── 점자 N면 ──`), `pdf_to_braille`로 모든 점자 면이 배정되어 유실되지 않게 한다.
 
 구현 스택: 웹 `/dev` — 모드 A/B 패널. PDF는 읽기 전용(이미지+추출 텍스트).
 

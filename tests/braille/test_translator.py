@@ -15,6 +15,21 @@ def test_number_and_simple_syllables():
     assert "i" in ascii_text  # 다
 
 
+def test_number_run_inserts_space_before_following_letters():
+    """숫자열 뒤 한글·영문 앞에는 수표 종료용 빈칸 하나."""
+    assert hangul_text_to_ascii("12가") == "#ab $"
+    assert hangul_text_to_ascii("제1교시") == ".n#a `+,o"
+    assert hangul_text_to_ascii("2026학년도").startswith("#bjbf ")
+    # 이미 공백이면 추가하지 않음
+    assert hangul_text_to_ascii("12 가") == "#ab $"
+    # 구두점에는 붙임
+    assert hangul_text_to_ascii("3)") == "#c,0"
+    # 대괄호 점수 표기는 참고 BRF처럼 공백 없이
+    assert hangul_text_to_ascii("[3점]") == "82#c.s5;0"
+    # 괄호 밖 단위는 빈칸
+    assert hangul_text_to_ascii("3점").startswith("#c ")
+
+
 def test_haknyeondo_uses_vc_abbrev():
     ascii_text = hangul_text_to_ascii("학년도")
     assert "jac*iu" in ascii_text or "jac*" in ascii_text

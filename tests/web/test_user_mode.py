@@ -38,8 +38,11 @@ def client():
 def test_user_flow_upload_convert_brf(client, tiny_pdf_bytes: bytes):
     home = client.get("/")
     assert home.status_code == 200
-    assert "분석 및 변환" in home.text
+    assert "PDF 선택 및 변환" in home.text
+    assert 'id="pdf-file"' in home.text
+    assert 'for="pdf-file"' in home.text
 
+    # 분리 API도 유지 (개발자·호환)
     up = client.post(
         "/api/upload",
         files={"file": ("sample.pdf", tiny_pdf_bytes, "application/pdf")},
@@ -64,6 +67,24 @@ def test_user_flow_upload_convert_brf(client, tiny_pdf_bytes: bytes):
     assert b"2005-3" in dtb.content
 
 
+def test_user_flow_upload_and_convert_one_shot(client, tiny_pdf_bytes: bytes):
+    one = client.post(
+        "/api/upload-and-convert",
+        files={"file": ("one.pdf", tiny_pdf_bytes, "application/pdf")},
+    )
+    assert one.status_code == 200
+    body = one.json()
+    assert body["ok"] is True
+    assert body["status"]["has_pdf"] is True
+    assert body["status"]["has_brf"] is True
+    assert body["status"]["dtbook_download_available"] is True
+    assert "변환 완료" in body["message"]
+
+    brf = client.get("/api/download/brf")
+    assert brf.status_code == 200
+    assert len(brf.content) > 0
+
+
 def test_developer_bundle_and_page(client, tiny_pdf_bytes: bytes):
     assert client.get("/dev").status_code == 200
 
@@ -81,6 +102,13 @@ def test_developer_bundle_and_page(client, tiny_pdf_bytes: bytes):
     assert data["braille_pages"]
     assert "unicode" in data["braille_pages"][0]
     assert "reverse" in data["braille_pages"][0]
+    assert "pdf_to_braille" in data
+    # 모든 점자 면이 어떤 PDF 면에도 배정되어 유실되지 않음
+    covered = set()
+    for indices in data["pdf_to_braille"].values():
+        covered.update(indices)
+    assert covered == set(range(len(data["braille_pages"])))
+    assert "pdf_page_numbers" in data["braille_pages"][0]
     assert "brf_text" not in data
     assert data["page_numbers"]
     page0 = data["pdf_pages"][0]

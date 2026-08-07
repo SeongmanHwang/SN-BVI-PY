@@ -21,6 +21,7 @@ class PdfSpan:
     is_bold: bool
     page_number: int
     extraction_index: int
+    is_underline: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -30,6 +31,7 @@ class PdfSpan:
             "font": self.font,
             "font_size": self.font_size,
             "is_bold": self.is_bold,
+            "is_underline": self.is_underline,
             "page_number": self.page_number,
             "extraction_index": self.extraction_index,
         }
@@ -46,6 +48,7 @@ class PdfSpan:
             is_bold=bool(data.get("is_bold", False)),
             page_number=int(data["page_number"]),
             extraction_index=int(data.get("extraction_index", 0)),
+            is_underline=bool(data.get("is_underline", False)),
         )
 
 

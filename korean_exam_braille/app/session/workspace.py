@@ -10,6 +10,7 @@ from korean_exam_braille.app.daisy.exporter import ExamDtbookExporter
 from korean_exam_braille.app.daisy.ports import DtbookExporter
 from korean_exam_braille.app.exam.models import ExamDocument
 from korean_exam_braille.app.exam.tree_text import format_exam_summary, format_exam_tree
+from korean_exam_braille.app.common.opaque_text import replace_opaque_with_slash
 from korean_exam_braille.app.pipeline.pipeline import PipelineResult
 from korean_exam_braille.app.session.pdf_structure import PdfStructureService
 
@@ -129,10 +130,15 @@ class ConversionWorkspace:
         return self.service.render_page(page_number, zoom=zoom)
 
     def pdf_page_text(self, page_number: int) -> str:
-        """읽기 순서 블록 텍스트 (스크린 리더·검색용)."""
+        """읽기 순서 블록 텍스트 (스크린 리더·검색·추출 창용).
+
+        불투명 코드포인트는 추출 단계에서 빗금(/)으로 바뀌지만,
+        표시 경로에서도 한 번 더 정규화한다.
+        """
         page = self.service.get_page(page_number)
         blocks = sorted(page.blocks, key=lambda b: b.reading_order)
-        return "\n\n".join(b.text.strip() for b in blocks if b.text.strip())
+        raw = "\n\n".join(b.text.strip() for b in blocks if b.text.strip())
+        return replace_opaque_with_slash(raw)
 
     def reverse_translation_text(self) -> str:
         """생성 BRF 전체 역점역 (면 구분 유지)."""
@@ -192,6 +198,92 @@ class ConversionWorkspace:
 
         return brf_text_to_display_pages(self.brf_text())
 
+    def _exam_node_pdf_page_map(self) -> dict[str, int]:
+        """Exam 노드 id → PDF 면 번호."""
+        mapping: dict[str, int] = {}
+
+        def walk(node) -> None:
+            pn = node.source_range.page_number
+            if pn is not None:
+                mapping[node.id] = int(pn)
+            for child in node.children:
+                walk(child)
+
+        walk(self.exam_document().root)
+        return mapping
+
+    def braille_pages_linked_to_pdf(self) -> tuple[list[dict[str, object]], dict[str, list[int]]]:
+        """점자 표시 면 + PDF 면번호 → 점자 면 인덱스 목록.
+
+        레이아웃 줄의 ``source_node_ids``와 Exam ``page_number``로 매핑한다.
+        매핑이 비면 비례 분할로 폴백해 점자 면이 UI에서 유실되지 않게 한다.
+        """
+        from korean_exam_braille.app.session.review import brf_text_to_display_pages
+
+        display = brf_text_to_display_pages(self.brf_text())
+        pdf_nums = self.pdf_page_numbers()
+        id_to_pdf = self._exam_node_pdf_page_map()
+
+        layout_nonempty = []
+        if self.last_result is not None:
+            for page in self.last_result.braille_document.pages:
+                if any((ln.ascii_text or "").strip() for ln in page.lines):
+                    layout_nonempty.append(page)
+
+        for i, disp in enumerate(display):
+            pdfs: set[int] = set()
+            if i < len(layout_nonempty):
+                for line in layout_nonempty[i].lines:
+                    for nid in line.source_node_ids:
+                        if nid and nid in id_to_pdf:
+                            pdfs.add(id_to_pdf[nid])
+            disp["pdf_page_numbers"] = sorted(pdfs)
+            disp["braille_index"] = i
+
+        # 구분선만 있는 면 등: 앞·뒤 배정 면으로 채움
+        last: list[int] | None = None
+        for disp in display:
+            nums = list(disp["pdf_page_numbers"])  # type: ignore[arg-type]
+            if nums:
+                last = nums
+            elif last is not None:
+                disp["pdf_page_numbers"] = list(last)
+        last = None
+        for disp in reversed(display):
+            nums = list(disp["pdf_page_numbers"])  # type: ignore[arg-type]
+            if nums:
+                last = nums
+            elif last is not None:
+                disp["pdf_page_numbers"] = list(last)
+
+        # 전면 미매핑이면 점자 면을 PDF 면에 비례 배분
+        if display and pdf_nums and all(not d["pdf_page_numbers"] for d in display):
+            n_brl = len(display)
+            n_pdf = len(pdf_nums)
+            for i, disp in enumerate(display):
+                pi = min(n_pdf - 1, (i * n_pdf) // max(n_brl, 1))
+                disp["pdf_page_numbers"] = [pdf_nums[pi]]
+
+        pdf_to_braille: dict[str, list[int]] = {str(n): [] for n in pdf_nums}
+        assigned: set[int] = set()
+        for i, disp in enumerate(display):
+            for pn in disp["pdf_page_numbers"]:  # type: ignore[union-attr]
+                key = str(pn)
+                if key in pdf_to_braille:
+                    pdf_to_braille[key].append(i)
+                    assigned.add(i)
+        orphans = [i for i in range(len(display)) if i not in assigned]
+        if orphans and pdf_nums:
+            key = str(pdf_nums[-1])
+            pdf_to_braille.setdefault(key, []).extend(orphans)
+            for i in orphans:
+                display[i]["pdf_page_numbers"] = [pdf_nums[-1]]
+
+        for key, indices in pdf_to_braille.items():
+            pdf_to_braille[key] = sorted(set(indices))
+
+        return display, pdf_to_braille
+
     def review_bundle(
         self,
         *,
@@ -226,9 +318,10 @@ class ConversionWorkspace:
         """면 텍스트·크기·블록 bbox (하이라이트용)."""
         page = self.service.get_page(page_number)
         blocks = sorted(page.blocks, key=lambda b: b.reading_order)
+        raw = "\n\n".join(b.text.strip() for b in blocks if b.text.strip())
         return {
             "page_number": page_number,
-            "text": "\n\n".join(b.text.strip() for b in blocks if b.text.strip()),
+            "text": replace_opaque_with_slash(raw),
             "width": page.width,
             "height": page.height,
             "blocks": [
@@ -275,13 +368,14 @@ class ConversionWorkspace:
         pages = self.pdf_page_numbers()
         page = page_number if page_number in pages else (pages[0] if pages else 1)
         pdf_pages = [self.pdf_page_payload(n) for n in pages]
-        braille_pages = self.braille_pages_view()
+        braille_pages, pdf_to_braille = self.braille_pages_linked_to_pdf()
         return {
             "status": self.status_snapshot(),
             "page_number": page,
             "page_numbers": pages,
             "pdf_pages": pdf_pages,
             "braille_pages": braille_pages,
+            "pdf_to_braille": pdf_to_braille,
             "braille_page_index": 1 if braille_pages else 0,
             "exam_tree_text": self.exam_tree_text(),
             "exam_tree": self.exam_tree_nodes(),

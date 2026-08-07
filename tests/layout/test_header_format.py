@@ -36,5 +36,6 @@ def test_pad_matches_reference_widths():
     assert pad_header_ascii("left", title) == "  " + title.strip()
     period = hangul_text_to_ascii("제1교시")
     centered = pad_header_ascii("center", period)
-    assert centered.startswith("            ")
+    lead = (32 - len(period.strip())) // 2
+    assert centered == (" " * lead) + period.strip()
     assert centered.strip() == period.strip()
