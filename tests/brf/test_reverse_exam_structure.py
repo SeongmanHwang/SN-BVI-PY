@@ -19,7 +19,14 @@ def test_score_bracket():
 def test_speaker_colon():
     assert r(hangul_text_to_ascii("선생님: 발표")) == "선생님: 발표"
     assert r("11") == ":"
+    assert r('"1') == ":"
+    assert hangul_text_to_ascii(":") == '"1'
     assert ",," not in r(hangul_text_to_ascii("선생님:"))
+    # 열린 음절 뒤 쌍점 — 종성 ㄴ(3)으로 오인하지 않음
+    assert r(hangul_text_to_ascii("사회:")) == "사회:"
+    assert r(hangul_text_to_ascii("예:")) == "예:"
+    assert "사횐" not in r(hangul_text_to_ascii("사회:"))
+    assert "옌" not in r(hangul_text_to_ascii("예:"))
 
 
 def test_letter_range_tilde():
