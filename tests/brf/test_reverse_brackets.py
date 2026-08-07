@@ -12,6 +12,23 @@ def test_square_brackets_and_particles():
     assert r("820,a;0w") == "[A]의"
 
 
+def test_bracket_uri_mal_not_middot():
+    """[우리말]: 종성 ㄹ(1)+;0(]) 이 가운뎃점 1; 보다 우선.
+
+    회귀: 82m\"oe1;0 → [우리마·<U:0> (잘못)
+    """
+    ascii_text = '82m"oe1;0'
+    assert hangul_text_to_ascii("[우리말]") == ascii_text
+    assert r(ascii_text) == "[우리말]"
+    assert r(hangul_text_to_ascii("[우리말]")) == "[우리말]"
+    assert r(hangul_text_to_ascii("[향찰 표기]")) == "[향찰 표기]"
+    # 단독 1;0 도 · 로 훔치지 않음 (1 → 쉼표 잔여, ;0 → ])
+    assert r("1;0") == ",]"
+    # 진짜 가운뎃점은 뒤에 0이 없을 때
+    assert r("1;") == "·"
+    assert r("e1;0") == "말]"
+
+
 def test_circled_digits():
     for ink, cell in zip("①②③④⑤", "abcde"):
         assert r(f"7#{cell}7") == ink

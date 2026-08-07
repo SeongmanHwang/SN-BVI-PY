@@ -10,6 +10,7 @@ from korean_exam_braille.app.pdf.block_builder import build_blocks
 from korean_exam_braille.app.pdf.candidates import detect_block_candidates
 from korean_exam_braille.app.common.opaque_text import replace_opaque_with_slash
 from korean_exam_braille.app.pdf.emphasis import mark_underlined_spans
+from korean_exam_braille.app.pdf.graphic_linearize import linearize_page_graphics
 from korean_exam_braille.app.pdf.layout_profile import PageLayoutProfile, infer_layout_profile
 from korean_exam_braille.app.pdf.line_builder import build_lines
 from korean_exam_braille.app.pdf.models import (
@@ -98,6 +99,8 @@ def build_page_structure(
         page_width=float(rect.width),
         profile=profile,
     )
+    # 향찰: 밑줄 본문 행 / 원문자 행 분리·병합 + 박스 표선
+    lines = linearize_page_graphics(page, lines)
     blocks = build_blocks(lines, page_number, profile=profile)
     assign_reading_order(blocks, profile=profile)
     for block in blocks:

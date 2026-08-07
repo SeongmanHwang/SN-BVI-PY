@@ -38,9 +38,11 @@ from korean_exam_braille.app.brf.korean_tables import (
     compose_hangul,
 )
 
-# 최장 일치용 정렬
+# 최장 일치용 정렬 — 길이 우선, 같은 길이면 대·중·소괄호 우선
+_BRACKET_PUNCT_KEYS = frozenset({"82", ";0", "81", '"0', "8'", ",0", "78", "07"})
 _PUNCT_MULTI_SORTED: list[tuple[str, str]] = sorted(
-    PUNCT_MULTI.items(), key=lambda kv: -len(kv[0])
+    PUNCT_MULTI.items(),
+    key=lambda kv: (-len(kv[0]), 0 if kv[0] in _BRACKET_PUNCT_KEYS else 1),
 )
 
 # 종성으로 붙이면 안 되는 닫는 복합 부호 접두 (2칸+)
@@ -156,6 +158,10 @@ def _match_punct(chars: list[str], i: int) -> tuple[str, int] | None:
 
     `82`는 지문 범위(82#…@9#…;0)일 때만 대괄호로 보지 않는다.
     `82#c…;0` ([3점] 등)은 여는 `[` 로 처리한다.
+
+    대괄호 `;0`(]) 우선: 가운뎃점 ``1;`` 과 겹치는 ``1;0`` 은
+    종성 ㄹ(``1``)+닫는 대괄호(``;0``)로 나누도록 ``1;`` 일치를 포기한다.
+    (예: ``82m"oe1;0`` → ``[우리말]``, 잘못되면 ``[우리마·<U:0>``)
     """
     for key, ink in _PUNCT_MULTI_SORTED:
         got = _slice_norm(chars, i, len(key))
@@ -165,6 +171,9 @@ def _match_punct(chars: list[str], i: int) -> tuple[str, int] | None:
             rest = normalize_brf_ascii("".join(chars[i:]))
             if _PASSAGE_RANGE_ASCII.match(rest):
                 continue
+        # 1;0 → · + <U:0> 이 아니라 (종성)ㄹ + ]
+        if key == "1;" and _slice_norm(chars, i, 3) == "1;0":
+            continue
         return ink, len(key)
     return None
 
@@ -693,7 +702,19 @@ def reverse_translate_line(raw_ascii: str) -> str:
             i = jumped
             continue
 
-        # 2) 복합 문장부호 최장 일치
+        # 2) 대괄호 우선 (;0 / 82) — 가운뎃점 1; 등보다 먼저 닫는 ] 확보
+        if _slice_norm(chars, i, 2) == ";0":
+            out.append("]")
+            i += 2
+            continue
+        if _slice_norm(chars, i, 2) == "82":
+            rest = normalize_brf_ascii("".join(chars[i:]))
+            if not _PASSAGE_RANGE_ASCII.match(rest):
+                out.append("[")
+                i += 2
+                continue
+
+        # 2b) 복합 문장부호 최장 일치
         punct = _match_punct(chars, i)
         if punct:
             ink, ncons = punct

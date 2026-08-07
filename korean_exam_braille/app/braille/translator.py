@@ -172,6 +172,9 @@ _CIRCLED_HANGUL_JAMO: dict[str, str] = {
 _EMPHASIS_OPEN = ",-"
 _EMPHASIS_CLOSE = "-'"
 _U_TAG = re.compile(r"<u>(.*?)</u>", re.DOTALL)
+# 보기·표 박스 직렬화 표선 (묵자 ──── → 점자 표선; 역점역은 ─×16)
+_RULE_LINE = re.compile(r"^[\s]*[─━\-_=]{5,}[\s]*$")
+_TABLE_RULE_ASCII = "!" + ("3" * 20) + "4"
 
 _WORD_ABBREV_REV: list[tuple[str, str]] = sorted(
     ((hangul, cells) for cells, hangul in WORD_ABBREV.items()),
@@ -281,12 +284,17 @@ def hangul_text_to_ascii(text: str) -> str:
     (한자 전환 표는 쓰지 않음).
     ``<u>…</u>`` 밑줄 구간은 강조부호 ``,-`` … ``-'`` 로 감싼다.
     ㉠–㉭ 은 드러냄+자모(``7=a7`` …)로 점역한다.
+    ⓐ–ⓩ 는 드러냄+라틴(``7a7`` …)으로 점역한다 (참고 BRF ``70a7``/‘a’ 아님).
+    박스 표선 행(``────`` 등)은 ``!333…4`` 표선으로 점역한다.
     """
     text = replace_opaque_with_slash(text)
     text = replace_hanja_with_reading(text)
     chunks: list[str] = []
     for line in text.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
-        chunks.append(_encode_line_with_emphasis(line))
+        if _RULE_LINE.match(line):
+            chunks.append(_TABLE_RULE_ASCII)
+        else:
+            chunks.append(_encode_line_with_emphasis(line))
     return "\n".join(chunks)
 
 
