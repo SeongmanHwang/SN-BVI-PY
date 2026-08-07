@@ -26,6 +26,21 @@ def test_comma_from_quote_cell():
     assert r('`mas"') == "국어,"
 
 
+def test_forward_comma_is_dot5_not_jong_rieul():
+    """정방향 쉼표는 5점("). 종성 ㄹ(1)로 넣으면 가,→갈."""
+    from korean_exam_braille.app.braille.translator import hangul_text_to_ascii as h
+
+    assert h(",") == '"'
+    assert h("가,") == '$"'
+    assert r(h("가,")) == "가,"
+    assert r(h("가, 나")) == "가, 나"
+    assert r(h("이며,")) == "이며,"
+    # 종성 ㄹ은 그대로 2점
+    assert "1" in h("갈")
+    assert r(h("갈")) == "갈"
+    assert r(h("랄")) == "랄"
+
+
 def test_inline_number_range():
     assert r("#aj@9#ae") == "10~15"
     assert r("#aa@9#ae") == "11~15"

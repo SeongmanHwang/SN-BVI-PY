@@ -63,3 +63,13 @@ def test_circled_choice_to_marked_digit():
     assert reverse_translate_line(ascii_text).startswith("①")
     assert hangul_text_to_ascii("③").startswith("7#c7")
     assert reverse_translate_line("7#e7") == "⑤"
+
+
+def test_circled_hangul_and_underline_emphasis():
+    """참고 BRF: ㉠<u>차자 표기</u> → 7=a7,-;<. d+`o-'"""
+    assert hangul_text_to_ascii("㉠") == "7=a7"
+    assert hangul_text_to_ascii("㉡") == "7=37"
+    assert hangul_text_to_ascii("㉢") == "7=97"
+    body = hangul_text_to_ascii("차자 표기")
+    assert hangul_text_to_ascii("<u>차자 표기</u>") == ",-" + body + "-'"
+    assert hangul_text_to_ascii("㉠<u>차자 표기</u>") == "7=a7,-;<. d+`o-'"

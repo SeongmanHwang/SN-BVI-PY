@@ -27,6 +27,7 @@ from korean_exam_braille.app.brf.korean_tables import (
     WORD_ABBREV,
 )
 from korean_exam_braille.app.exam.models import ExamDocument, ExamNode
+from korean_exam_braille.app.common.hanja_reading import replace_hanja_with_reading
 from korean_exam_braille.app.common.opaque_text import replace_opaque_with_slash
 
 # 묵자 → ASCII (표 반전). 국내 BRF는 초성 ㄱ을 ` 로 씀.
@@ -63,7 +64,9 @@ _PUNCT_TO_ASCII: dict[str, str] = {
     ".": "4",
     "!": "6",
     "?": "8",
-    ",": "1",
+    # 한국 점자 쉼표 = 5점(⠐, ASCII ") — 초성 ㄹ과 동일 셀, 문맥으로 구분.
+    # 종성 ㄹ(2점, ASCII 1)과 섞이면 '가,' → '갈'이 된다.
+    ",": '"',
     ":": "3",
     "-": "-",
     "(": "8'",
@@ -111,6 +114,28 @@ _CIRCLED_DIGIT_CELL = {
     "④": "d",
     "⑤": "e",
 }
+
+# ㉠–㉭ (원문자 ㄱ–ㅎ) → 드러냄+온표자모. 참고 BRF: ㉠차자 → 7=a7,-…-'
+_CIRCLED_HANGUL_JAMO: dict[str, str] = {
+    "㉠": "ㄱ",
+    "㉡": "ㄴ",
+    "㉢": "ㄷ",
+    "㉣": "ㄹ",
+    "㉤": "ㅁ",
+    "㉥": "ㅂ",
+    "㉦": "ㅅ",
+    "㉧": "ㅇ",
+    "㉨": "ㅈ",
+    "㉩": "ㅊ",
+    "㉪": "ㅋ",
+    "㉫": "ㅌ",
+    "㉬": "ㅍ",
+    "㉭": "ㅎ",
+}
+
+_EMPHASIS_OPEN = ",-"
+_EMPHASIS_CLOSE = "-'"
+_U_TAG = re.compile(r"<u>(.*?)</u>", re.DOTALL)
 
 _WORD_ABBREV_REV: list[tuple[str, str]] = sorted(
     ((hangul, cells) for cells, hangul in WORD_ABBREV.items()),
@@ -206,12 +231,30 @@ def hangul_text_to_ascii(text: str) -> str:
     """묵자 문자열 → Braille ASCII (개행 보존).
 
     PUA 등 불투명 코드포인트는 빗금(/)으로 바꾼 뒤 점역한다.
+    한자는 공식 실무대로 음독 한글로 바꾸고, 한글·한자 병기는 한자를 생략한다
+    (한자 전환 표는 쓰지 않음).
+    ``<u>…</u>`` 밑줄 구간은 강조부호 ``,-`` … ``-'`` 로 감싼다.
+    ㉠–㉭ 은 드러냄+자모(``7=a7`` …)로 점역한다.
     """
     text = replace_opaque_with_slash(text)
+    text = replace_hanja_with_reading(text)
     chunks: list[str] = []
     for line in text.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
-        chunks.append(_encode_line(line))
+        chunks.append(_encode_line_with_emphasis(line))
     return "\n".join(chunks)
+
+
+def _encode_line_with_emphasis(line: str) -> str:
+    """밑줄 태그를 강조 점자로 바꾼 뒤 일반 점역."""
+    parts: list[str] = []
+    cursor = 0
+    for m in _U_TAG.finditer(line):
+        parts.append(_encode_line(line[cursor : m.start()]))
+        inner = m.group(1)
+        parts.append(_EMPHASIS_OPEN + _encode_line(inner) + _EMPHASIS_CLOSE)
+        cursor = m.end()
+    parts.append(_encode_line(line[cursor:]))
+    return "".join(parts)
 
 
 def _encode_line(line: str) -> str:
@@ -261,6 +304,15 @@ def _hangul_body_to_ascii(text: str) -> str:
             i += 1
             continue
 
+        if ch in _CIRCLED_HANGUL_JAMO:
+            # ㉠–㉭: 드러냄+온표 자모 (참고 BRF 7=a7 …). ①용 7#a7 과 구분.
+            jamo = _CIRCLED_HANGUL_JAMO[ch]
+            body = JAMO_COMPAT_TO_ASCII.get(jamo)
+            if body:
+                out.append("7" + body + "7")
+            i += 1
+            continue
+
         if ch.isdigit():
             digit_start = i
             digits: list[str] = []
@@ -283,6 +335,8 @@ def _hangul_body_to_ascii(text: str) -> str:
             continue
 
         if ("A" <= ch <= "Z") or ("a" <= ch <= "z"):
+            # 로마자(라틴)는 항상 로마자표(⠴/0)를 앞에 붙인다.
+            # 한글 약자(은=z 등)와 셀이 겹쳐도 표지로 구분한다.
             out.append(ROMAN_SIGN)
             while i < n:
                 c = text[i]
@@ -303,7 +357,8 @@ def _hangul_body_to_ascii(text: str) -> str:
                 if c == "," and i + 1 < n and (
                     ("A" <= text[i + 1] <= "Z") or ("a" <= text[i + 1] <= "z")
                 ):
-                    out.append(_PUNCT_TO_ASCII[","])
+                    # 영문 구간 쉼표는 2점(ASCII 1). 한글 쉼표(")와 구분.
+                    out.append("1")
                     i += 1
                     continue
                 break

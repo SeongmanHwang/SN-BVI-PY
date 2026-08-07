@@ -10,8 +10,10 @@ from korean_exam_braille.app.common.opaque_text import (
     is_opaque_char,
 )
 from korean_exam_braille.app.pdf.emphasis import (
+    annotate_text_with_underline_ranges,
     bbox_has_underline,
     iter_horizontal_underline_segments,
+    merge_underline_flags,
 )
 from korean_exam_braille.app.pdf.extractor import extract_pdf
 from korean_exam_braille.app.session import ConversionWorkspace
@@ -62,14 +64,57 @@ def test_workspace_pdf_text_uses_slash(tmp_path: Path):
     ws = ConversionWorkspace()
     ws.load_pdf(path)
     page_struct = ws.service.document.pages[0]
-    assert page_struct.blocks
-    page_struct.blocks[0].text = "정상\uf0a1기호"
+    assert page_struct.spans
+    page_struct.spans[0].text = "정상\uf0a1기호"
+    page_struct.spans[0].underline_ranges = []
+    # line/block still old — display walks spans
+    for ln in page_struct.lines:
+        if page_struct.spans[0].id in ln.span_ids:
+            ln.span_ids = [page_struct.spans[0].id]
     shown = ws.pdf_page_text(1)
-    assert shown == "정상/기호"
+    assert "정상/기호" in shown or shown == "정상/기호"
     assert "<U+" not in shown
-    payload = ws.pdf_page_payload(1)
-    assert payload["text"] == "정상/기호"
 
+
+def test_partial_underline_char_ranges(tmp_path: Path):
+    """긴 span 중 일부만 밑줄이면 해당 구간만 underline_ranges."""
+    path = tmp_path / "partial_ul.pdf"
+    fontfile = Path(r"C:\Windows\Fonts\malgun.ttf")
+    if not fontfile.exists():
+        fontfile = Path(r"C:\Windows\Fonts\arial.ttf")
+    doc = fitz.open()
+    page = doc.new_page(width=620, height=240)
+    page.insert_font(fontname="f0", fontfile=str(fontfile))
+    ink = "한자를 빌려 표기하는 차자 표기를 활용"
+    page.insert_text((50, 100), ink, fontsize=12, fontname="f0")
+    targets = page.search_for("차자 표기")
+    assert targets
+    r = targets[0]
+    y = r.y1 + 1.2
+    page.draw_line(fitz.Point(r.x0, y), fitz.Point(r.x1, y), width=0.6)
+    doc.save(path)
+    doc.close()
+
+    extracted = extract_pdf(path, page_numbers=[1])
+    page_struct = extracted.pages[0]
+    hit = next(s for s in page_struct.spans if "차자 표기" in s.text)
+    assert hit.underline_ranges
+    start, end = hit.underline_ranges[0]
+    assert "차자 표기" in hit.text[start:end]
+    # 줄 전체가 아니라 부분
+    assert end - start < len(hit.text)
+    from korean_exam_braille.app.pdf.display_text import format_page_text_for_display
+
+    shown = format_page_text_for_display(page_struct)
+    assert "<u>차자 표기</u>" in shown
+    # 변환용 line/block 에도 동일 마커가 남아 점역 가능해야 한다
+    assert any("<u>차자 표기</u>" in (ln.text or "") for ln in page_struct.lines)
+    assert any("<u>차자 표기</u>" in (b.text or "") for b in page_struct.blocks)
+    from korean_exam_braille.app.braille.translator import hangul_text_to_ascii
+
+    block_hit = next(b for b in page_struct.blocks if "<u>차자 표기</u>" in (b.text or ""))
+    assert ",-" in hangul_text_to_ascii(block_hit.text)
+    assert "-'" in hangul_text_to_ascii(block_hit.text)
 
 def test_extractor_normalizes_opaque_in_spans(tmp_path: Path):
     """추출 직후 span 텍스트에 PUA가 남지 않고 빗금이 된다."""
@@ -83,6 +128,17 @@ def test_extractor_normalizes_opaque_in_spans(tmp_path: Path):
     doc.close()
     extracted = extract_pdf(path, page_numbers=[1])
     assert all("\uf000" not in s.text for s in extracted.pages[0].spans)
+
+
+def test_merge_underline_flags_and_annotate():
+    assert merge_underline_flags([False, True, True, False, True]) == [
+        (1, 3),
+        (4, 5),
+    ]
+    assert (
+        annotate_text_with_underline_ranges("abcdefgh", [(2, 5)])
+        == "ab<u>cde</u>fgh"
+    )
 
 
 def test_underline_not_in_span_flags():

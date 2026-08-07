@@ -1,4 +1,4 @@
-"""시각 강조(밑줄 등) 감지 — PyMuPDF 드로잉·span bbox 교차."""
+"""시각 강조(밑줄 등) 감지 — 드로잉 ∩ 글자 bbox → 구간 오프셋."""
 
 from __future__ import annotations
 
@@ -6,15 +6,23 @@ from typing import Any
 
 from korean_exam_braille.app.pdf.models import BBox, PdfSpan
 
-# span flags에 underline 비트는 없음(실측). HTML/선 드로잉으로만 존재.
+UnderlineRange = tuple[int, int]  # [start, end) 문자 오프셋
 
 
 def iter_horizontal_underline_segments(
     page: Any,
     *,
     max_dy: float = 1.5,
+    min_width: float = 8.0,
+    max_width_ratio: float = 0.42,
 ) -> list[tuple[float, float, float]]:
-    """페이지 드로잉에서 거의 수평인 선분 (x0, x1, y) 목록."""
+    """페이지 드로잉에서 밑줄 후보인 거의 수평 선분 (x0, x1, y).
+
+    열 구분선·박스 가로줄(페이지 폭에 가까운 긴 선)은 제외하고,
+    단어·구 길이의 짧은 선만 남긴다.
+    """
+    page_width = float(getattr(getattr(page, "rect", None), "width", 0) or 0)
+    max_width = page_width * max_width_ratio if page_width > 0 else 180.0
     segs: list[tuple[float, float, float]] = []
     for drawing in page.get_drawings() or []:
         for item in drawing.get("items") or []:
@@ -26,7 +34,8 @@ def iter_horizontal_underline_segments(
                 continue
             x0 = float(min(p1.x, p2.x))
             x1 = float(max(p1.x, p2.x))
-            if x1 - x0 < 2.0:
+            width = x1 - x0
+            if width < min_width or width > max_width:
                 continue
             segs.append((x0, x1, (y1 + y2) / 2.0))
     return segs
@@ -43,7 +52,6 @@ def bbox_has_underline(
     x0, y0, x1, y1 = bbox
     width = max(x1 - x0, 1.0)
     height = max(y1 - y0, 1.0)
-    # 밑줄은 보통 baseline~하단 바로 아래. 글자 상단 쪽 선은 제외.
     y_lo = y0 + height * 0.45
     y_hi = y1 + y_pad_below
     for sx0, sx1, sy in segments:
@@ -55,14 +63,80 @@ def bbox_has_underline(
     return False
 
 
+def char_is_underlined(
+    char_bbox: BBox,
+    segments: list[tuple[float, float, float]],
+    *,
+    y_pad_below: float = 5.0,
+    min_x_overlap_ratio: float = 0.35,
+) -> bool:
+    """한 글자 bbox가 밑줄 선분과 의미 있게 겹치면 True.
+
+    부분 밑줄은 span 전체 비율이 아니라 글자 폭 기준으로 판정한다.
+    """
+    return bbox_has_underline(
+        char_bbox,
+        segments,
+        y_pad_below=y_pad_below,
+        min_x_overlap_ratio=min_x_overlap_ratio,
+    )
+
+
+def merge_underline_flags(flags: list[bool]) -> list[UnderlineRange]:
+    """글자별 밑줄 플래그 → [start, end) 연속 구간."""
+    ranges: list[UnderlineRange] = []
+    n = len(flags)
+    i = 0
+    while i < n:
+        if not flags[i]:
+            i += 1
+            continue
+        j = i + 1
+        while j < n and flags[j]:
+            j += 1
+        ranges.append((i, j))
+        i = j
+    return ranges
+
+
+def annotate_text_with_underline_ranges(
+    text: str,
+    ranges: list[UnderlineRange],
+    *,
+    open_mark: str = "<u>",
+    close_mark: str = "</u>",
+) -> str:
+    """밑줄 구간에 표시용 마커를 삽입 (끝에서부터)."""
+    if not text or not ranges:
+        return text
+    out = text
+    for start, end in sorted(ranges, key=lambda r: r[0], reverse=True):
+        start = max(0, min(start, len(out)))
+        end = max(start, min(end, len(out)))
+        if start >= end:
+            continue
+        out = out[:start] + open_mark + out[start:end] + close_mark + out[end:]
+    return out
+
+
 def mark_underlined_spans(page: Any, spans: list[PdfSpan]) -> list[PdfSpan]:
-    """드로잉 밑줄과 교차하는 span의 is_underline을 True로 표시 (제자리)."""
+    """드로잉 밑줄과 교차하는 span/글자 구간을 표시 (제자리).
+
+    - ``char_bboxes``가 있으면 부분 밑줄을 ``underline_ranges``로 기록
+    - 글자 정보가 없으면 span bbox 전체 교차로 ``is_underline``만 설정
+    """
     if not spans:
         return spans
     segs = iter_horizontal_underline_segments(page)
     if not segs:
         return spans
     for span in spans:
-        if bbox_has_underline(span.bbox, segs):
+        if span.char_bboxes and len(span.char_bboxes) == len(span.text):
+            flags = [char_is_underlined(bb, segs) for bb in span.char_bboxes]
+            ranges = merge_underline_flags(flags)
+            span.underline_ranges = ranges
+            span.is_underline = bool(ranges)
+        elif bbox_has_underline(span.bbox, segs):
             span.is_underline = True
+            span.underline_ranges = [(0, len(span.text))] if span.text else []
     return spans

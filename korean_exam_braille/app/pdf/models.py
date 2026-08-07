@@ -22,6 +22,10 @@ class PdfSpan:
     page_number: int
     extraction_index: int
     is_underline: bool = False
+    # 부분 밑줄: [start, end) 문자 오프셋. 글자 bbox가 있을 때만 채움.
+    underline_ranges: list[tuple[int, int]] = field(default_factory=list)
+    # 추출 시 rawdict 글자 bbox (표시·부분 강조용). 직렬화 시 생략 가능.
+    char_bboxes: list[BBox] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -32,6 +36,7 @@ class PdfSpan:
             "font_size": self.font_size,
             "is_bold": self.is_bold,
             "is_underline": self.is_underline,
+            "underline_ranges": [list(r) for r in self.underline_ranges],
             "page_number": self.page_number,
             "extraction_index": self.extraction_index,
         }
@@ -39,6 +44,11 @@ class PdfSpan:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> PdfSpan:
         bbox = data["bbox"]
+        ranges_raw = data.get("underline_ranges") or []
+        ranges: list[tuple[int, int]] = []
+        for r in ranges_raw:
+            if isinstance(r, (list, tuple)) and len(r) >= 2:
+                ranges.append((int(r[0]), int(r[1])))
         return cls(
             id=str(data["id"]),
             text=str(data["text"]),
@@ -49,6 +59,7 @@ class PdfSpan:
             page_number=int(data["page_number"]),
             extraction_index=int(data.get("extraction_index", 0)),
             is_underline=bool(data.get("is_underline", False)),
+            underline_ranges=ranges,
         )
 
 

@@ -10,7 +10,7 @@ from korean_exam_braille.app.daisy.exporter import ExamDtbookExporter
 from korean_exam_braille.app.daisy.ports import DtbookExporter
 from korean_exam_braille.app.exam.models import ExamDocument
 from korean_exam_braille.app.exam.tree_text import format_exam_summary, format_exam_tree
-from korean_exam_braille.app.common.opaque_text import replace_opaque_with_slash
+from korean_exam_braille.app.pdf.display_text import format_page_text_for_display
 from korean_exam_braille.app.pipeline.pipeline import PipelineResult
 from korean_exam_braille.app.session.pdf_structure import PdfStructureService
 
@@ -132,13 +132,11 @@ class ConversionWorkspace:
     def pdf_page_text(self, page_number: int) -> str:
         """읽기 순서 블록 텍스트 (스크린 리더·검색·추출 창용).
 
-        불투명 코드포인트는 추출 단계에서 빗금(/)으로 바뀌지만,
-        표시 경로에서도 한 번 더 정규화한다.
+        부분 밑줄은 ``<u>…</u>`` 로 표시한다 (변환용 블록에도 동일 마커가 들어가며,
+        점역기는 강조부호 ``,-`` … ``-'`` 로 바꾼다).
         """
         page = self.service.get_page(page_number)
-        blocks = sorted(page.blocks, key=lambda b: b.reading_order)
-        raw = "\n\n".join(b.text.strip() for b in blocks if b.text.strip())
-        return replace_opaque_with_slash(raw)
+        return format_page_text_for_display(page)
 
     def reverse_translation_text(self) -> str:
         """생성 BRF 전체 역점역 (면 구분 유지)."""
@@ -318,10 +316,9 @@ class ConversionWorkspace:
         """면 텍스트·크기·블록 bbox (하이라이트용)."""
         page = self.service.get_page(page_number)
         blocks = sorted(page.blocks, key=lambda b: b.reading_order)
-        raw = "\n\n".join(b.text.strip() for b in blocks if b.text.strip())
         return {
             "page_number": page_number,
-            "text": replace_opaque_with_slash(raw),
+            "text": format_page_text_for_display(page),
             "width": page.width,
             "height": page.height,
             "blocks": [

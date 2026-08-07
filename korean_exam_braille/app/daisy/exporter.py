@@ -57,7 +57,9 @@ def _heading_for(node: ExamNode) -> str:
 
 
 def _text_of(node: ExamNode) -> str:
-    return (node.source_range.raw_text or "").strip()
+    """노드 원문. 점역용 ``<u>`` 마커는 DTBook에 넣지 않는다."""
+    raw = (node.source_range.raw_text or "").strip()
+    return re.sub(r"</?u>", "", raw)
 
 
 class ExamDtbookExporter:

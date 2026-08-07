@@ -28,18 +28,39 @@ def _is_bold(flags: int, font_name: str) -> bool:
 
 
 def extract_page_spans(page: fitz.Page, page_number: int) -> list[PdfSpan]:
-    """한 페이지의 텍스트 span을 추출 순서대로 반환."""
+    """한 페이지의 텍스트 span을 추출 순서대로 반환.
+
+    rawdict로 글자 bbox를 함께 두어 부분 밑줄 구간에 쓴다.
+    """
     spans: list[PdfSpan] = []
-    data = page.get_text("dict", flags=fitz.TEXT_PRESERVE_WHITESPACE)
+    data = page.get_text("rawdict", flags=fitz.TEXT_PRESERVE_WHITESPACE)
     index = 0
     for block in data.get("blocks", []):
         if block.get("type") != 0:
             continue
         for line in block.get("lines", []):
             for span in line.get("spans", []):
-                text = replace_opaque_with_slash(span.get("text") or "")
+                chars = span.get("chars") or []
+                if chars:
+                    raw_chars = [str(c.get("c") or "") for c in chars]
+                    char_bboxes: list[tuple[float, float, float, float]] = []
+                    for c in chars:
+                        bb = c.get("bbox") or (0, 0, 0, 0)
+                        char_bboxes.append(
+                            (float(bb[0]), float(bb[1]), float(bb[2]), float(bb[3]))
+                        )
+                    raw_text = "".join(raw_chars)
+                else:
+                    raw_text = span.get("text") or ""
+                    char_bboxes = []
+
+                text = replace_opaque_with_slash(raw_text)
                 if text == "":
                     continue
+                # opaque 치환으로 길이가 달라지면 글자 bbox 정렬이 깨지므로 포기
+                if char_bboxes and len(char_bboxes) != len(text):
+                    char_bboxes = []
+
                 bbox = tuple(float(x) for x in span["bbox"])
                 font = str(span.get("font", ""))
                 size = float(span.get("size", 0.0))
@@ -55,6 +76,7 @@ def extract_page_spans(page: fitz.Page, page_number: int) -> list[PdfSpan]:
                         page_number=page_number,
                         extraction_index=index,
                         is_underline=False,
+                        char_bboxes=char_bboxes,
                     )
                 )
                 index += 1

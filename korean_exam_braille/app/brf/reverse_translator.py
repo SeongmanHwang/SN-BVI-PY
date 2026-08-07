@@ -662,25 +662,8 @@ def reverse_translate_line(raw_ascii: str) -> str:
             i += ncons
             continue
 
-        # 2b) 따옴표·낫표 직후 단독 로마자 한 글자 (‘a’~‘e’).
-        if (
-            open_quote_depth > 0
-            and n in _LATIN_LETTERS
-            and out
-            and out[-1] in {"‘", "“", "「", "『"}
-        ):
-            nxt_i = i + 1
-            if (
-                _starts_closing_multi(chars, nxt_i)
-                or (
-                    nxt_i < len(chars)
-                    and _match_punct(chars, nxt_i) is not None
-                )
-                or _is_boundary(_peek(chars, nxt_i))
-            ):
-                out.append(n)
-                i += 1
-                continue
+        # 로마자표(0) 없는 라틴 모양 셀은 한글 약자·자모로 본다.
+        # 원문 로마자 z 는 정방향이 0z 로 넣는다 (‘은’=z 와 구분).
 
         # 3) 온표 + 단독 자모 (종성/초성/모음 본문, 닫는따옴표 보호)
         if n == ON_SIGN:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from korean_exam_braille.app.pdf.emphasis import annotate_text_with_underline_ranges
 from korean_exam_braille.app.pdf.layout_profile import PageLayoutProfile
 from korean_exam_braille.app.pdf.models import BBox, PdfLine, PdfSpan
 
@@ -116,7 +117,11 @@ def _group_spans_into_lines(
     lines: list[PdfLine] = []
     for i, group in enumerate(groups):
         group_sorted = sorted(group, key=lambda s: (s.bbox[0], s.extraction_index))
-        raw = "".join(s.text for s in group_sorted)
+        # 부분 밑줄을 <u>…</u> 로 남겨 점역기가 ,- … -' 로 바꾸게 한다.
+        raw = "".join(
+            annotate_text_with_underline_ranges(s.text, s.underline_ranges)
+            for s in group_sorted
+        )
         text = " ".join(raw.split()) if raw.strip() else raw
         bbox = _union_bbox([s.bbox for s in group_sorted])
         lines.append(
