@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from korean_exam_braille.app.pdf.models import BBox, PdfSpan
+from korean_exam_braille.app.pdf.boxes import iter_box_rects
 
 UnderlineRange = tuple[int, int]  # [start, end) 문자 오프셋
 
@@ -23,6 +24,7 @@ def iter_horizontal_underline_segments(
     """
     page_width = float(getattr(getattr(page, "rect", None), "width", 0) or 0)
     max_width = page_width * max_width_ratio if page_width > 0 else 180.0
+    boxes = iter_box_rects(page)
     segs: list[tuple[float, float, float]] = []
     for drawing in page.get_drawings() or []:
         for item in drawing.get("items") or []:
@@ -37,7 +39,17 @@ def iter_horizontal_underline_segments(
             width = x1 - x0
             if width < min_width or width > max_width:
                 continue
-            segs.append((x0, x1, (y1 + y2) / 2.0))
+            # 닫힌 박스의 위·아랫변은 글자 가까이에 있어도 밑줄이 아니다.
+            # [가] 빈칸 박스와 제시문 외곽 하단이 대표적인 오인 사례다.
+            sy = (y1 + y2) / 2.0
+            if any(
+                abs(x0 - bx0) <= 3.0
+                and abs(x1 - bx1) <= 3.0
+                and (abs(sy - by0) <= 2.0 or abs(sy - by1) <= 2.0)
+                for bx0, by0, bx1, by1 in boxes
+            ):
+                continue
+            segs.append((x0, x1, sy))
     return segs
 
 

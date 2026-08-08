@@ -165,12 +165,19 @@ def insert_box_rule_lines(
     page_number: int,
     rule_text: str = BOX_RULE_INK,
 ) -> list[PdfLine]:
-    """박스에 속한 행 앞·뒤에 표선 묵자 행을 끼운다. 연속 중복 표선은 합친다."""
+    """구조 박스에 속한 행 앞·뒤에 표선 묵자 행을 끼운다.
+
+    높이가 낮은 빈 응답란(`[가]` 등)은 구조 컨테이너가 아니므로 제외한다.
+    """
     if not lines or not boxes:
         return lines
 
+    structural_boxes = [box for box in boxes if box[3] - box[1] >= 28.0]
+    if not structural_boxes:
+        return lines
+
     ordered_boxes = sorted(
-        boxes,
+        structural_boxes,
         key=lambda b: ((b[2] - b[0]) * (b[3] - b[1]), b[1], b[0]),
     )
 

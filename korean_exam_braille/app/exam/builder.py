@@ -26,6 +26,7 @@ def _primary_tag(block: PdfBlock) -> str | None:
         "PassageGroup",
         "Question",
         "Choice",
+        "TableAsset",
         "ExampleBox",
         "Footnote",
     )
@@ -207,6 +208,20 @@ class RuleExamStructureBuilder:
                     group.node.children.append(_node_from_block(block, "ExampleBox"))
                 else:
                     root_children.append(_node_from_block(block, "ExampleBox"))
+                continue
+
+            if tag == "TableAsset":
+                q = current_question()
+                if q is not None:
+                    q.children.append(_node_from_block(block, "TableAsset", confidence=0.95))
+                elif group is not None:
+                    group.node.children.append(
+                        _node_from_block(block, "TableAsset", confidence=0.95)
+                    )
+                else:
+                    root_children.append(
+                        _node_from_block(block, "TableAsset", confidence=0.95)
+                    )
                 continue
 
             if tag == "Footnote":

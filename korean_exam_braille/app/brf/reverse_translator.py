@@ -74,6 +74,37 @@ def _is_boundary(ch: str | None) -> bool:
     return ch is None or ch == " "
 
 
+def _is_tail_boundary(chars: list[str], i: int) -> bool:
+    """문장·어절 끝: EOL, 공백, 또는 밑줄 표지(,- / -').
+
+    마침표(4)·느낌표 등은 포함하지 않는다 — 호출부에서 별도 처리.
+    """
+    if i >= len(chars):
+        return True
+    if chars[i] == " ":
+        return True
+    matched = _match_punct(chars, i)
+    return matched is not None and matched[0] in {"<u>", "</u>"}
+
+
+# 종성 ㅌ이 붙었을 때 실제 어휘로 자주 쓰이는 음절 (물음표와 구분)
+_COMMON_TIEUT_SYLLABLES = frozenset(
+    "같겉곁끝밑밭얕옅맡핥숱"
+)
+
+
+def _prefer_jong_tieut(cho: str, jung: str, out: list[str] | None) -> bool:
+    """문장 끝 셀 8을 종성 ㅌ으로 볼지.
+
+    - 지금 조립 중인 음절만으로 된 어절(밭/끝/밑) → ㅌ
+    - 흔한 ㅌ받침 음절(같/맡 등) → ㅌ
+    - 그 외(까요?/것은? 등) → 물음표
+    """
+    if _out_word_hangul_count(out) == 0:
+        return True
+    return _syllable(cho, jung, "ㅌ") in _COMMON_TIEUT_SYLLABLES
+
+
 def _out_word_hangul_count(out: list[str] | None) -> int:
     """출력 버퍼에서 직전 공백 이후 한글 음절 수."""
     if not out:
@@ -297,6 +328,8 @@ def _take_final(
     *,
     skip_jong: frozenset[str] | None = None,
     out: list[str] | None = None,
+    cho: str | None = None,
+    jung: str | None = None,
 ) -> tuple[str, int, bool] | None:
     """(종성 또는 문장부호, 새 인덱스, 문장부호 여부).
 
@@ -307,6 +340,10 @@ def _take_final(
       - 점역: 두 음절 이하 어절 뒤 마침표 앞에 공백을 넣음
       - 역점역: 공백 없이 짧은 어절(완성 중 포함 ≤2음절) 뒤 ``4`` → 종성 ㅍ,
                 세 음절 이상 어절 뒤 ``4`` → 마침표
+
+    종성 ㅌ과 물음표는 동일 셀(ASCII ``8``):
+      - 문장 끝(공백·EOL·밑줄 표지)에서 흔한 ㅌ받침 음절/단독 어절 → ㅌ
+      - 그 외 문장 끝 → 물음표
     """
     if i >= len(chars):
         return None
@@ -334,9 +371,19 @@ def _take_final(
             return JONGSEONG["4"], i + 1, False
         return ".", i + 1, True
 
-    # 문장 끝 구두점 (종성과 동일 셀) — 다음이 경계일 때만
-    if n in PUNCT_SINGLE and n in {"6", "8"} and _is_boundary(nxt):
-        return PUNCT_SINGLE[n], i + 1, True
+    # 물음표(8) ↔ 종성 ㅌ(8) — 문장 끝이면 맥락으로 구분
+    if n == "8" and _is_tail_boundary(chars, i + 1):
+        if (
+            cho is not None
+            and jung is not None
+            and _prefer_jong_tieut(cho, jung, out)
+        ):
+            return JONGSEONG["8"], i + 1, False
+        return "?", i + 1, True
+
+    # 느낌표(6) ↔ 종성 ㅋ — 문장 끝(공백·밑줄)이면 구두점
+    if n == "6" and _is_tail_boundary(chars, i + 1):
+        return PUNCT_SINGLE["6"], i + 1, True
 
     # 종성 ㅎ(0) — 다음에 닫는 따옴표 2칸이 오면 종성 아님(위에서 처리)
     # 단독 0 뒤가 경계이고 직전이 모음 음절이면 종성 ㅎ 가능
@@ -382,7 +429,9 @@ def _emit_syllable_with_optional_final(
     *,
     skip_jong: frozenset[str] | None = None,
 ) -> int:
-    final = _take_final(chars, i_after_vowel, skip_jong=skip_jong, out=out)
+    final = _take_final(
+        chars, i_after_vowel, skip_jong=skip_jong, out=out, cho=cho, jung=jung
+    )
     if final is None:
         out.append(_syllable(cho, jung))
         return i_after_vowel
@@ -421,7 +470,9 @@ def _emit_abbrev_cv(
     skip_jong: frozenset[str] | None = None,
 ) -> int:
     cho, jung = ABBREV_CV[cell]
-    final = _take_final(chars, i + 1, skip_jong=skip_jong, out=out)
+    final = _take_final(
+        chars, i + 1, skip_jong=skip_jong, out=out, cho=cho, jung=jung
+    )
     if final is None:
         out.append(_syllable(cho, jung))
         return i + 1
@@ -924,6 +975,11 @@ def reverse_translate_line(raw_ascii: str) -> str:
 
         # 12) 1칸 구두점
         if n in PUNCT_SINGLE:
+            # 8: 문장 끝(공백·EOL·밑줄)이면 물음표 우선
+            if n == "8" and _is_tail_boundary(chars, i + 1):
+                out.append("?")
+                i += 1
+                continue
             # 8: 문장 중간·뒤에 한글이 이어지면 여는 “ 로 보는 편이 나을 수 있음
             if n == "8" and i + 1 < len(chars) and chars[i + 1] != " ":
                 nxt = _peek(chars, i + 1)

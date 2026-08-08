@@ -44,6 +44,17 @@ def test_passage_range_and_question_number():
     assert q.startswith("#a4")
 
 
+def test_middot_has_single_space_on_both_sides():
+    """가운뎃점은 원문 공백과 무관하게 앞뒤 한 칸으로 점역한다."""
+    left = hangul_text_to_ascii("국어")
+    right = hangul_text_to_ascii("영어")
+    expected = f"{left} 1; {right}"
+    assert hangul_text_to_ascii("국어·영어") == expected
+    assert hangul_text_to_ascii("국어 · 영어") == expected
+    assert hangul_text_to_ascii("국어  ·  영어") == expected
+    assert reverse_translate_line(expected) == "국어 · 영어"
+
+
 def test_roundtrip_smoke_simple_words():
     for src in ["가", "나", "다", "그리고", "하나"]:
         ascii_text = hangul_text_to_ascii(src)

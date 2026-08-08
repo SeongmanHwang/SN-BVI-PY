@@ -450,6 +450,20 @@ def _hangul_body_to_ascii(text: str) -> str:
             continue
 
         if ch in _PUNCT_TO_ASCII:
+            # 가운뎃점은 묵자 원문의 공백 유무와 관계없이 양옆을 한 칸 띄운다.
+            # 줄 처음·끝에서는 불필요한 선행·후행 공백을 만들지 않는다.
+            if ch == "·":
+                while out and out[-1] == " ":
+                    out.pop()
+                if out:
+                    out.append(" ")
+                out.append(_PUNCT_TO_ASCII[ch])
+                i += 1
+                while i < n and text[i] in " \t":
+                    i += 1
+                if i < n:
+                    out.append(" ")
+                continue
             # 마침표(4) ↔ 종성 ㅍ(4): 두 음절 이하 어절 뒤면 앞에 공백.
             if ch == ".":
                 syl = _trailing_hangul_syllables(text, i)

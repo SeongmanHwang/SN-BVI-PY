@@ -93,6 +93,20 @@ def test_insert_box_rule_lines_around_content():
     assert texts[i1 + 1] == BOX_RULE_INK
 
 
+def test_small_blank_box_does_not_insert_structure_rules():
+    """[가] 빈 응답란 같은 낮은 박스는 제시문 표선으로 직렬화하지 않는다."""
+    lines = [
+        PdfLine("l0", "학생3 : [가]", (140, 924, 390, 937), [], 1, 0),
+        PdfLine("l1", "사회자: 네, 좋은 의견입니다.", (90, 942, 350, 955), [], 1, 1),
+    ]
+    small_box = (136.65, 923.84, 398.92, 938.11)
+    out = insert_box_rule_lines(lines, [small_box], page_number=1)
+    assert [ln.text for ln in out] == [
+        "학생3 : [가]",
+        "사회자: 네, 좋은 의견입니다.",
+    ]
+
+
 def test_pdf_two_line_hyangchal_extract(tmp_path: Path):
     """합성 PDF: 밑줄 본문 + 아래 원문자 → 두 줄 (합치지 않음)."""
     fontfile = Path(r"C:\Windows\Fonts\malgun.ttf")

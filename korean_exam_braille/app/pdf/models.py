@@ -143,6 +143,63 @@ class PdfBlock:
 
 
 @dataclass
+class PdfTableCell:
+    row: int
+    column: int
+    bbox: BBox
+    text: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "row": self.row,
+            "column": self.column,
+            "bbox": list(self.bbox),
+            "text": self.text,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> PdfTableCell:
+        bbox = data["bbox"]
+        return cls(
+            row=int(data["row"]),
+            column=int(data["column"]),
+            bbox=(float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3])),
+            text=str(data.get("text", "")),
+        )
+
+
+@dataclass
+class PdfTable:
+    """벡터 셀 경계로 확정한 표 격자."""
+
+    bbox: BBox
+    row_count: int
+    column_count: int
+    cells: list[PdfTableCell] = field(default_factory=list)
+    confidence: float = 0.95
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "bbox": list(self.bbox),
+            "row_count": self.row_count,
+            "column_count": self.column_count,
+            "cells": [cell.to_dict() for cell in self.cells],
+            "confidence": self.confidence,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> PdfTable:
+        bbox = data["bbox"]
+        return cls(
+            bbox=(float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3])),
+            row_count=int(data["row_count"]),
+            column_count=int(data["column_count"]),
+            cells=[PdfTableCell.from_dict(x) for x in data.get("cells", [])],
+            confidence=float(data.get("confidence", 0.95)),
+        )
+
+
+@dataclass
 class PdfPageStructure:
     page_number: int  # 1-based
     width: float
@@ -150,6 +207,7 @@ class PdfPageStructure:
     spans: list[PdfSpan] = field(default_factory=list)
     lines: list[PdfLine] = field(default_factory=list)
     blocks: list[PdfBlock] = field(default_factory=list)
+    tables: list[PdfTable] = field(default_factory=list)
     bracket_groups: list[BracketGroup] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
@@ -160,6 +218,7 @@ class PdfPageStructure:
             "spans": [s.to_dict() for s in self.spans],
             "lines": [ln.to_dict() for ln in self.lines],
             "blocks": [b.to_dict() for b in self.blocks],
+            "tables": [table.to_dict() for table in self.tables],
             "bracket_groups": [
                 g.to_dict() if hasattr(g, "to_dict") else g for g in self.bracket_groups
             ],
@@ -176,6 +235,7 @@ class PdfPageStructure:
             spans=[PdfSpan.from_dict(x) for x in data.get("spans", [])],
             lines=[PdfLine.from_dict(x) for x in data.get("lines", [])],
             blocks=[PdfBlock.from_dict(x) for x in data.get("blocks", [])],
+            tables=[PdfTable.from_dict(x) for x in data.get("tables", [])],
             bracket_groups=[
                 BracketGroup.from_dict(x) for x in data.get("bracket_groups", [])
             ],

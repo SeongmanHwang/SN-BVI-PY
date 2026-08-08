@@ -7,6 +7,7 @@ from pathlib import Path
 import fitz
 
 from korean_exam_braille.app.pdf.block_builder import build_blocks
+from korean_exam_braille.app.pdf.boxes import line_mostly_in_box
 from korean_exam_braille.app.pdf.bracket_groups import (
     annotate_blocks_with_brackets,
     assign_lines_to_brackets,
@@ -24,6 +25,7 @@ from korean_exam_braille.app.pdf.models import (
     PdfPageStructure,
     PdfSpan,
 )
+from korean_exam_braille.app.pdf.tables import detect_vector_tables
 from korean_exam_braille.app.pdf.reading_order import assign_reading_order
 
 
@@ -98,6 +100,7 @@ def build_page_structure(
 ) -> PdfPageStructure:
     rect = page.rect
     spans = extract_page_spans(page, page_number)
+    tables = detect_vector_tables(page, spans)
     mark_underlined_spans(page, spans)
     # drawing과 원래 PDF 텍스트로 괄호를 먼저 찾은 뒤, 공백에 인쇄된
     # 물리적 [A]~[E]만 텍스트에서 제거한다. 의미는 아래 메타데이터로 보존.
@@ -119,6 +122,12 @@ def build_page_structure(
     for block in blocks:
         band = profile.band_of_y(block.bbox[1]) if profile is not None else None
         block.candidate_tags = detect_block_candidates(block.text, band=band)
+        if any(
+            line_mostly_in_box(block.bbox, table.bbox, min_overlap=0.3)
+            for table in tables
+        ):
+            block.candidate_tags.append("TableAsset")
+            block.candidate_tags = list(dict.fromkeys(block.candidate_tags))
     annotate_blocks_with_brackets(blocks, lines, bracket_groups)
     return PdfPageStructure(
         page_number=page_number,
@@ -127,6 +136,7 @@ def build_page_structure(
         spans=spans,
         lines=lines,
         blocks=blocks,
+        tables=tables,
         bracket_groups=bracket_groups,
     )
 
