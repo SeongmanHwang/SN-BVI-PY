@@ -202,6 +202,14 @@ body.is-resizing {
   flex: 1;
 }
 
+/* 점자·역점역만: BRF 하드 줄 1:1, soft-wrap 없이 가로 스크롤 */
+.braille-pre,
+#reverse-text {
+  white-space: pre;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
 .braille-pre {
   font-family: "Segoe UI Symbol", "Apple Braille", "Noto Sans Symbols 2", sans-serif;
   font-size: 1.15rem;

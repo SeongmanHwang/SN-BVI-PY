@@ -62,6 +62,33 @@ def test_roundtrip_smoke_simple_words():
         assert src in back or back.replace(" ", "") == src.replace(" ", "")
 
 
+def test_ssang_sios_avoids_ga_abbrev():
+    """가류 약자 + ㅆ(`/`)은 ㅖ와 겹치므로 초성+ㅏ+ㅆ으로 점역한다."""
+    cases = {
+        "갔": "`</",
+        "났": "c</",
+        "닸": "i</",
+        "맜": "e</",
+        "밨": "^</",
+        "샀": ",</",
+        "잤": ".</",
+        "캈": "f</",
+        "탔": "h</",
+        "팠": "d</",
+        "핬": "j</",
+    }
+    for src, expected in cases.items():
+        ascii_text = hangul_text_to_ascii(src)
+        assert ascii_text == expected, (src, ascii_text, expected)
+        assert reverse_translate_line(ascii_text) == src
+    # 약자+/ 레거시는 ㅖ 쪽으로 읽히는 셀도 있음 — 폐 ≠ 팠
+    assert hangul_text_to_ascii("폐") == "d/"
+    assert reverse_translate_line("d/") == "폐"
+    assert reverse_translate_line("d</") == "팠"
+    assert hangul_text_to_ascii("땅을 팠다") == ",i<7! d</i"
+    assert reverse_translate_line(",i<7! d</i") == "땅을 팠다"
+
+
 def test_translator_fills_cells():
     tr = TableBrailleTranslator()
     seq = tr.translate_text("가나다")

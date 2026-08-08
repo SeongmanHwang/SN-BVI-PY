@@ -238,13 +238,17 @@ def _encode_syllable(cho: str, jung: str, jong: str) -> str:
             return cho_ascii + _VC_ABBREV[(jung, jong)]
 
     if jung == "ㅏ" and cho in _CV_ABBREV_BY_CHO:
-        base = _CV_ABBREV_BY_CHO[cho]
-        if jong:
-            jong_ascii = _JONG_TO_ASCII.get(jong)
-            if jong_ascii:
-                return base + jong_ascii
+        # 종성 ㅆ(`/`)은 중성 ㅖ와 같은 셀이라 가류 약자+/ 가
+        # 녜·뎨·폐…와 겹친다. 규정상 ㅏ를 생략하지 않고 초성+ㅏ+ㅆ로 적는다.
+        # 예: 팠 → d</  (d/ 이면 폐), 갔 → `</  ($/ 도 가능하나 통일).
+        if jong != "ㅆ":
+            base = _CV_ABBREV_BY_CHO[cho]
+            if jong:
+                jong_ascii = _JONG_TO_ASCII.get(jong)
+                if jong_ascii:
+                    return base + jong_ascii
+                return base
             return base
-        return base
 
     parts: list[str] = []
     if cho != "ㅇ":

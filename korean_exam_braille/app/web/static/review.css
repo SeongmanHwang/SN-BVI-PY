@@ -163,8 +163,10 @@
   border-radius: 0.25rem;
   overflow: auto;
   flex: 1;
-  white-space: pre-wrap;
-  word-break: break-word;
+  /* BRF 하드 줄과 1:1 — soft-wrap 없이 가로 스크롤 */
+  white-space: pre;
+  overflow-wrap: normal;
+  word-break: normal;
   font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
   font-size: 0.85rem;
   line-height: 1.45;
