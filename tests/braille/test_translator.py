@@ -55,6 +55,23 @@ def test_middot_has_single_space_on_both_sides():
     assert reverse_translate_line(expected) == "국어 · 영어"
 
 
+def test_figure_placeholder_fixed_braille_roundtrip():
+    """[그림] ↔ ⠠⠄⠈⠪⠐⠕⠢⠀⠠⠗⠶⠐⠜⠁⠠⠄ (그림 생략) 고정 왕복."""
+    from korean_exam_braille.app.brf.ascii_braille import ascii_to_unicode
+    from korean_exam_braille.app.common.figure_markup import (
+        FIGURE_BRAILLE_ASCII,
+        FIGURE_INK,
+    )
+
+    assert hangul_text_to_ascii(FIGURE_INK) == FIGURE_BRAILLE_ASCII
+    assert reverse_translate_line(FIGURE_BRAILLE_ASCII) == FIGURE_INK
+    assert ascii_to_unicode(FIGURE_BRAILLE_ASCII) == "⠠⠄⠈⠪⠐⠕⠢⠀⠠⠗⠶⠐⠜⠁⠠⠄"
+    # 본문 사이 행으로 끼어도 해당 행만 고정 치환
+    body = hangul_text_to_ascii("본문")
+    mixed = hangul_text_to_ascii(f"본문\n{FIGURE_INK}\n본문")
+    assert mixed == f"{body}\n{FIGURE_BRAILLE_ASCII}\n{body}"
+
+
 def test_roundtrip_smoke_simple_words():
     for src in ["가", "나", "다", "그리고", "하나"]:
         ascii_text = hangul_text_to_ascii(src)

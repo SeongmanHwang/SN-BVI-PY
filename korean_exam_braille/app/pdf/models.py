@@ -200,6 +200,31 @@ class PdfTable:
 
 
 @dataclass
+class PdfFigure:
+    """래스터 그림 영역(조각 이미지는 하나로 병합)."""
+
+    bbox: BBox
+    piece_count: int = 1
+    confidence: float = 0.9
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "bbox": list(self.bbox),
+            "piece_count": self.piece_count,
+            "confidence": self.confidence,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> PdfFigure:
+        bbox = data["bbox"]
+        return cls(
+            bbox=(float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3])),
+            piece_count=int(data.get("piece_count", 1)),
+            confidence=float(data.get("confidence", 0.9)),
+        )
+
+
+@dataclass
 class PdfPageStructure:
     page_number: int  # 1-based
     width: float
@@ -208,6 +233,7 @@ class PdfPageStructure:
     lines: list[PdfLine] = field(default_factory=list)
     blocks: list[PdfBlock] = field(default_factory=list)
     tables: list[PdfTable] = field(default_factory=list)
+    figures: list[PdfFigure] = field(default_factory=list)
     bracket_groups: list[BracketGroup] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
@@ -219,6 +245,7 @@ class PdfPageStructure:
             "lines": [ln.to_dict() for ln in self.lines],
             "blocks": [b.to_dict() for b in self.blocks],
             "tables": [table.to_dict() for table in self.tables],
+            "figures": [figure.to_dict() for figure in self.figures],
             "bracket_groups": [
                 g.to_dict() if hasattr(g, "to_dict") else g for g in self.bracket_groups
             ],
@@ -236,6 +263,7 @@ class PdfPageStructure:
             lines=[PdfLine.from_dict(x) for x in data.get("lines", [])],
             blocks=[PdfBlock.from_dict(x) for x in data.get("blocks", [])],
             tables=[PdfTable.from_dict(x) for x in data.get("tables", [])],
+            figures=[PdfFigure.from_dict(x) for x in data.get("figures", [])],
             bracket_groups=[
                 BracketGroup.from_dict(x) for x in data.get("bracket_groups", [])
             ],

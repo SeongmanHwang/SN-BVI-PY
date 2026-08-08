@@ -15,7 +15,12 @@ from __future__ import annotations
 import re
 
 from korean_exam_braille.app.pdf.boxes import iter_box_rects, line_mostly_in_box
-from korean_exam_braille.app.pdf.models import BBox, PdfLine
+from korean_exam_braille.app.pdf.figures import promote_figures_into_lines
+from korean_exam_braille.app.pdf.models import BBox, PdfFigure, PdfLine, PdfTable
+from korean_exam_braille.app.pdf.tables import (
+    box_matches_table,
+    promote_tables_into_lines,
+)
 
 _CIRCLED_LATIN = set("ⓐⓑⓒⓓⓔⓕⓖⓗⓘⓙⓚⓛⓜⓝⓞⓟⓠⓡⓢⓣⓤⓥⓦⓧⓨⓩ")
 _CIRCLED_RE = re.compile(r"[ⓐ-ⓩ]")
@@ -223,12 +228,31 @@ def insert_box_rule_lines(
     return compacted
 
 
-def linearize_page_graphics(page: object, lines: list[PdfLine]) -> list[PdfLine]:
-    """향찰 2행 직렬화 + 박스 표선."""
+def linearize_page_graphics(
+    page: object,
+    lines: list[PdfLine],
+    *,
+    tables: list[PdfTable] | None = None,
+    figures: list[PdfFigure] | None = None,
+) -> list[PdfLine]:
+    """향찰 2행 직렬화 + 표·그림 승격 + 박스 표선."""
+    table_list = tables or []
+    figure_list = figures or []
     if not lines:
+        page_number = 1
+        if figure_list:
+            return promote_figures_into_lines([], figure_list, page_number=page_number)
         return lines
     page_number = lines[0].page_number
     lines = split_stacked_hyangchal_lines(lines)
     lines = merge_circled_label_lines(lines)
-    boxes = iter_box_rects(page)
+    if table_list:
+        lines = promote_tables_into_lines(lines, table_list, page_number=page_number)
+    if figure_list:
+        lines = promote_figures_into_lines(lines, figure_list, page_number=page_number)
+    boxes = [
+        box
+        for box in iter_box_rects(page)
+        if not box_matches_table(box, table_list)
+    ]
     return insert_box_rule_lines(lines, boxes, page_number=page_number)

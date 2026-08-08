@@ -29,6 +29,7 @@ from korean_exam_braille.app.common.korean_tables import (
 )
 from korean_exam_braille.app.common.patterns import PASSAGE_RANGE
 from korean_exam_braille.app.exam.models import ExamDocument, ExamNode
+from korean_exam_braille.app.common.figure_markup import FIGURE_BRAILLE_ASCII, FIGURE_INK
 from korean_exam_braille.app.common.hanja_reading import replace_hanja_with_reading
 from korean_exam_braille.app.common.opaque_text import replace_opaque_with_slash
 
@@ -292,12 +293,15 @@ def hangul_text_to_ascii(text: str) -> str:
     ㉠–㉭ 은 드러냄+자모(``7=a7`` …)로 점역한다.
     ⓐ–ⓩ 는 드러냄+라틴(``7a7`` …)으로 점역한다 (참고 BRF ``70a7``/‘a’ 아님).
     박스 표선 행(``────`` 등)은 ``!333…4`` 표선으로 점역한다.
+    그림 자리표시 ``[그림]`` 은 고정 점역(그림 생략)으로 바꾼다.
     """
     text = replace_opaque_with_slash(text)
     text = replace_hanja_with_reading(text)
     chunks: list[str] = []
     for line in text.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
-        if _RULE_LINE.match(line):
+        if line.strip() == FIGURE_INK:
+            chunks.append(FIGURE_BRAILLE_ASCII)
+        elif _RULE_LINE.match(line):
             chunks.append(_TABLE_RULE_ASCII)
         else:
             chunks.append(_encode_line_with_emphasis(line))

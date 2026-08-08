@@ -14,6 +14,10 @@ from __future__ import annotations
 import re
 
 from korean_exam_braille.app.brf.ascii_braille import normalize_brf_ascii
+from korean_exam_braille.app.common.figure_markup import (
+    FIGURE_BRAILLE_ASCII,
+    FIGURE_INK,
+)
 from korean_exam_braille.app.common.korean_tables import (
     ABBREV_CV,
     ABBREV_GEOT,
@@ -728,6 +732,8 @@ def _try_roman_mode(chars: list[str], i: int, out: list[str]) -> int | None:
 
 def reverse_translate_line(raw_ascii: str) -> str:
     text = normalize_brf_ascii(raw_ascii)
+    if text.strip() == FIGURE_BRAILLE_ASCII:
+        return FIGURE_INK
     bracket_rule = _bracket_rule_ink(text)
     if bracket_rule is not None:
         return bracket_rule

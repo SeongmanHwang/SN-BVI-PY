@@ -25,7 +25,11 @@ from korean_exam_braille.app.pdf.models import (
     PdfPageStructure,
     PdfSpan,
 )
-from korean_exam_braille.app.pdf.tables import detect_vector_tables
+from korean_exam_braille.app.pdf.figures import FIGURE_INK, detect_raster_figures
+from korean_exam_braille.app.pdf.tables import (
+    clear_underlines_inside_tables,
+    detect_vector_tables,
+)
 from korean_exam_braille.app.pdf.reading_order import assign_reading_order
 
 
@@ -101,7 +105,9 @@ def build_page_structure(
     rect = page.rect
     spans = extract_page_spans(page, page_number)
     tables = detect_vector_tables(page, spans)
+    figures = detect_raster_figures(page)
     mark_underlined_spans(page, spans)
+    clear_underlines_inside_tables(spans, tables)
     # drawing과 원래 PDF 텍스트로 괄호를 먼저 찾은 뒤, 공백에 인쇄된
     # 물리적 [A]~[E]만 텍스트에서 제거한다. 의미는 아래 메타데이터로 보존.
     bracket_groups = detect_bracket_geometries(page)
@@ -113,8 +119,8 @@ def build_page_structure(
         page_width=float(rect.width),
         profile=profile,
     )
-    # 향찰: 밑줄 본문 행 / 원문자 행 분리·병합 + 박스 표선
-    lines = linearize_page_graphics(page, lines)
+    # 향찰: 밑줄 본문 행 / 원문자 행 분리·병합 + 표·그림 승격 + 박스 표선
+    lines = linearize_page_graphics(page, lines, tables=tables, figures=figures)
     # 오른쪽 여백 [A]~[E] 꺾인 괄호 → 행 소속
     assign_lines_to_brackets(lines, bracket_groups)
     blocks = build_blocks(lines, page_number, profile=profile)
@@ -127,7 +133,13 @@ def build_page_structure(
             for table in tables
         ):
             block.candidate_tags.append("TableAsset")
-            block.candidate_tags = list(dict.fromkeys(block.candidate_tags))
+        if any(
+            line_mostly_in_box(block.bbox, figure.bbox, min_overlap=0.3)
+            or FIGURE_INK in (block.text or "")
+            for figure in figures
+        ):
+            block.candidate_tags.append("FigureAsset")
+        block.candidate_tags = list(dict.fromkeys(block.candidate_tags))
     annotate_blocks_with_brackets(blocks, lines, bracket_groups)
     return PdfPageStructure(
         page_number=page_number,
@@ -137,6 +149,7 @@ def build_page_structure(
         lines=lines,
         blocks=blocks,
         tables=tables,
+        figures=figures,
         bracket_groups=bracket_groups,
     )
 
