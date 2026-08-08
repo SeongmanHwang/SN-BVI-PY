@@ -168,7 +168,7 @@ def test_review_mode_whole_brf_compare(client, tiny_pdf_bytes: bytes):
     assert body["reference_name"] == "vendor.brf"
     assert body["review_pages"]
     assert "assignment_summary" in body
-    assert "unassigned_reference" in body
+    assert "unassigned_generated" in body
     page0 = body["review_pages"][0]
     assert "generated" in page0 and "reference" in page0
     assert "unicode_lines" in page0["generated"]

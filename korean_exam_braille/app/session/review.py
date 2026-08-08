@@ -1,11 +1,11 @@
-"""생성 BRF ↔ 참고 BRF 검토 — 생성 면 기준 창 배정 비교.
+"""생성 BRF ↔ 참고 BRF 검토 — 참고 면 기준 창 배정 비교.
 
-생성 BRF는 이미 면(`\\x0c`)으로 나뉜다. 각 생성 면에 대해
-아직 배정되지 않은 참고 구간에서 **최장 연속 일치**를 찾고,
-그 일치를 앵커로 생성 면과 **같은 내용 길이**(공백·줄바꿈 제외)의
-참고 창을 잘라 짝짓는다.
+참고 BRF는 이미 면(`\\x0c`)으로 나뉜다. 각 참고 면에 대해
+아직 배정되지 않은 생성 구간에서 **최장 연속 일치**를 찾고,
+그 일치를 앵커로 참고 면과 **같은 내용 길이**(공백·줄바꿈 제외)의
+생성 창을 잘라 짝짓는다.
 비교·앵커 탐색 시 공백·줄바꿈·면구분 문자는 무시한다.
-창끼리 겹치지 않으며, 어떤 면에도 안 들어간 참고 구간은 누락으로 집계한다.
+창끼리 겹치지 않으며, 어떤 면에도 안 들어간 생성 구간은 누락으로 집계한다.
 면 안 글자 음영은 길이 하한 이상 최장 일치 앵커를 최대 5개만 인정한다.
 """
 
@@ -102,8 +102,8 @@ def brf_text_to_display_pages(brf_text: str) -> list[dict[str, object]]:
     return pages
 
 
-def flatten_reference_document(brf_text: str) -> dict[str, object]:
-    """참고 BRF 전체를 면 구분(`\\x0c`)이 섞인 한 문자열로 펼친다."""
+def flatten_brf_document(brf_text: str) -> dict[str, object]:
+    """BRF 전체를 면 구분(`\\x0c`)이 섞인 한 문자열로 펼친다."""
     pages = brf_text_to_display_pages(brf_text)
     ascii_parts: list[str] = []
     uni_parts: list[str] = []
@@ -121,6 +121,11 @@ def flatten_reference_document(brf_text: str) -> dict[str, object]:
         "ascii": ascii_flat,
         "unicode": uni_flat,
     }
+
+
+def flatten_reference_document(brf_text: str) -> dict[str, object]:
+    """하위 호환 — ``flatten_brf_document``와 동일."""
+    return flatten_brf_document(brf_text)
 
 
 @dataclass(frozen=True)
@@ -239,20 +244,20 @@ def char_mismatch_masks(
 
 def _longest_match_in_free(
     page: str,
-    ref: str,
+    source: str,
     claimed: list[bool],
     *,
     min_match: int,
 ) -> tuple[Match, list[int], list[int]] | None:
     """미배정 원문 구간에서 공백 무시 최장 일치. Match는 compact 좌표."""
     page_c, page_map = compact_index_map(page)
-    ref_c, ref_map = compact_index_map(ref)
-    if len(page_c) < min_match or not ref_c:
+    source_c, source_map = compact_index_map(source)
+    if len(page_c) < min_match or not source_c:
         return None
-    matcher = SequenceMatcher(a=page_c, b=ref_c, autojunk=False)
+    matcher = SequenceMatcher(a=page_c, b=source_c, autojunk=False)
     best: Match | None = None
     for lo, hi in free_intervals(claimed):
-        c_lo, c_hi = original_range_to_compact(ref_map, lo, hi)
+        c_lo, c_hi = original_range_to_compact(source_map, lo, hi)
         if c_hi - c_lo < min_match:
             continue
         match = matcher.find_longest_match(0, len(page_c), c_lo, c_hi)
@@ -262,20 +267,20 @@ def _longest_match_in_free(
             best = match
     if best is None:
         return None
-    return best, page_map, ref_map
+    return best, page_map, source_map
 
 
 def _place_same_length_window(
     page_compact_len: int,
     match: Match,
-    ref_map: list[int],
+    source_map: list[int],
     claimed: list[bool],
 ) -> tuple[int, int] | None:
-    """compact 일치 앵커 기준 — 생성 면과 같은 내용 길이의 참고 원문 창."""
-    if match.size <= 0 or match.b >= len(ref_map):
+    """compact 일치 앵커 기준 — 참고 면과 같은 내용 길이의 생성 원문 창."""
+    if match.size <= 0 or match.b >= len(source_map):
         return None
-    match_orig_b = ref_map[match.b]
-    match_orig_end = ref_map[match.b + match.size - 1] + 1
+    match_orig_b = source_map[match.b]
+    match_orig_end = source_map[match.b + match.size - 1] + 1
     containing: tuple[int, int] | None = None
     for lo, hi in free_intervals(claimed):
         if lo <= match_orig_b and match_orig_end <= hi:
@@ -284,14 +289,14 @@ def _place_same_length_window(
     if containing is None:
         return None
     lo, hi = containing
-    free_c_lo, free_c_hi = original_range_to_compact(ref_map, lo, hi)
+    free_c_lo, free_c_hi = original_range_to_compact(source_map, lo, hi)
     c_start = match.b - match.a
     c_end = c_start + page_compact_len
     c_start = max(c_start, free_c_lo)
     c_end = min(c_end, free_c_hi)
     if c_end <= c_start:
         return None
-    return compact_span_to_original(ref_map, c_start, c_end - c_start)
+    return compact_span_to_original(source_map, c_start, c_end - c_start)
 
 
 def _claim(claimed: list[bool], start: int, end: int) -> None:
@@ -313,7 +318,7 @@ def _reverse_from_ascii_slice(ascii_slice: str) -> str:
     return "\n".join(out_lines)
 
 
-def _display_ref_unicode(uni_slice: str) -> str:
+def _display_with_page_breaks(uni_slice: str) -> str:
     return uni_slice.replace("\x0c", _PAGE_BREAK_MARK)
 
 
@@ -367,43 +372,43 @@ def _annotate_pair(
     )
 
 
-def assign_reference_windows(
-    gen_pages: list[dict[str, object]],
-    ref_unicode: str,
-    ref_ascii: str,
+def assign_generated_windows(
+    ref_pages: list[dict[str, object]],
+    gen_unicode: str,
+    gen_ascii: str,
     *,
     min_match: int = DEFAULT_MIN_ANCHOR,
     on_progress: ProgressCallback | None = None,
 ) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
-    """생성 면마다 미배정 참고 구간에서 창을 배정. 겹침 없음, 누락 구간 반환."""
-    claimed = [False] * len(ref_unicode)
+    """참고 면마다 미배정 생성 구간에서 창을 배정. 겹침 없음, 생성 누락 구간 반환."""
+    claimed = [False] * len(gen_unicode)
     assignments: list[dict[str, object]] = []
-    total = len(gen_pages)
+    total = len(ref_pages)
 
-    for page_i, page in enumerate(gen_pages):
+    for page_i, page in enumerate(ref_pages):
         if on_progress is not None:
             on_progress(
                 page_i,
                 total * 2,
-                f"참고 구간 배정 중 — 생성 {page['index']}면 ({page_i + 1}/{total})",
+                f"생성 구간 배정 중 — 참고 {page['index']}면 ({page_i + 1}/{total})",
             )
-        gen_uni = str(page["unicode"])
-        gen_rev = str(page["reverse"])
+        ref_uni = str(page["unicode"])
+        ref_rev = str(page["reverse"])
         page_index = int(page["index"])
         found = _longest_match_in_free(
-            gen_uni, ref_unicode, claimed, min_match=min_match
+            ref_uni, gen_unicode, claimed, min_match=min_match
         )
         if found is None:
             assignments.append(
                 {
                     "index": page_index,
                     "matched": False,
-                    "gen_unicode": gen_uni,
-                    "gen_reverse": gen_rev,
-                    "ref_unicode": "",
-                    "ref_reverse": "",
-                    "ref_start": None,
-                    "ref_end": None,
+                    "ref_unicode": ref_uni,
+                    "ref_reverse": ref_rev,
+                    "gen_unicode": "",
+                    "gen_reverse": "",
+                    "gen_start": None,
+                    "gen_end": None,
                     "anchor_size": 0,
                     "window_len": 0,
                     "clipped": False,
@@ -411,22 +416,22 @@ def assign_reference_windows(
             )
             continue
 
-        match, page_map, ref_map = found
+        match, page_map, gen_map = found
         page_compact_len = len(page_map)
         window = _place_same_length_window(
-            page_compact_len, match, ref_map, claimed
+            page_compact_len, match, gen_map, claimed
         )
         if window is None:
             assignments.append(
                 {
                     "index": page_index,
                     "matched": False,
-                    "gen_unicode": gen_uni,
-                    "gen_reverse": gen_rev,
-                    "ref_unicode": "",
-                    "ref_reverse": "",
-                    "ref_start": None,
-                    "ref_end": None,
+                    "ref_unicode": ref_uni,
+                    "ref_reverse": ref_rev,
+                    "gen_unicode": "",
+                    "gen_reverse": "",
+                    "gen_start": None,
+                    "gen_end": None,
                     "anchor_size": match.size,
                     "window_len": 0,
                     "clipped": False,
@@ -436,30 +441,30 @@ def assign_reference_windows(
 
         start, end = window
         _claim(claimed, start, end)
-        ref_uni_slice = ref_unicode[start:end]
-        ref_ascii_slice = (
-            ref_ascii[start:end] if len(ref_ascii) == len(ref_unicode) else ""
+        gen_uni_slice = gen_unicode[start:end]
+        gen_ascii_slice = (
+            gen_ascii[start:end] if len(gen_ascii) == len(gen_unicode) else ""
         )
-        if ref_ascii_slice:
-            ref_rev = _reverse_from_ascii_slice(ref_ascii_slice)
+        if gen_ascii_slice:
+            gen_rev = _reverse_from_ascii_slice(gen_ascii_slice)
         else:
-            ref_rev = _display_ref_unicode(ref_uni_slice)
-        ref_compact_len = len(compact_index_map(ref_uni_slice)[1])
+            gen_rev = _display_with_page_breaks(gen_uni_slice)
+        gen_compact_len = len(compact_index_map(gen_uni_slice)[1])
         assignments.append(
             {
                 "index": page_index,
                 "matched": True,
-                "gen_unicode": gen_uni,
-                "gen_reverse": gen_rev,
-                "ref_unicode": _display_ref_unicode(ref_uni_slice),
+                "ref_unicode": ref_uni,
                 "ref_reverse": ref_rev,
-                "ref_start": start,
-                "ref_end": end,
+                "gen_unicode": _display_with_page_breaks(gen_uni_slice),
+                "gen_reverse": gen_rev,
+                "gen_start": start,
+                "gen_end": end,
                 "anchor_size": match.size,
-                "anchor_gen": match.a,
-                "anchor_ref": match.b,
+                "anchor_ref": match.a,
+                "anchor_gen": match.b,
                 "window_len": end - start,
-                "clipped": ref_compact_len != page_compact_len,
+                "clipped": gen_compact_len != page_compact_len,
             }
         )
 
@@ -468,9 +473,9 @@ def assign_reference_windows(
         size = hi - lo
         if size <= 0:
             continue
-        preview = _display_ref_unicode(ref_unicode[lo:hi])[:80]
+        preview = _display_with_page_breaks(gen_unicode[lo:hi])[:80]
         if not preview.strip() and not any(
-            ch not in "\n\r\t \x0c" for ch in ref_unicode[lo:hi]
+            ch not in "\n\r\t \x0c" for ch in gen_unicode[lo:hi]
         ):
             continue
         unassigned.append(
@@ -492,10 +497,10 @@ def build_review_pages(
     max_anchors: int = DEFAULT_MAX_ANCHORS,
     on_progress: ProgressCallback | None = None,
 ) -> dict[str, object]:
-    """생성 면 기준 창 배정 + 면 안 최장일치(최대 5) 음영."""
-    gen_pages = brf_text_to_display_pages(generated_brf)
-    ref_flat = flatten_reference_document(reference_brf)
-    total_pages = len(gen_pages)
+    """참고 면 기준 창 배정 + 면 안 최장일치(최대 5) 음영."""
+    ref_pages = brf_text_to_display_pages(reference_brf)
+    gen_flat = flatten_brf_document(generated_brf)
+    total_pages = len(ref_pages)
     total_steps = max(total_pages * 2, 1)
 
     if on_progress is not None:
@@ -503,10 +508,10 @@ def build_review_pages(
 
     cmp = compare_brf_texts(generated_brf, reference_brf)
 
-    assignments, unassigned = assign_reference_windows(
-        gen_pages,
-        str(ref_flat["unicode"]),
-        str(ref_flat["ascii"]),
+    assignments, unassigned = assign_generated_windows(
+        ref_pages,
+        str(gen_flat["unicode"]),
+        str(gen_flat["ascii"]),
         min_match=min_match,
         on_progress=on_progress,
     )
@@ -517,13 +522,13 @@ def build_review_pages(
             on_progress(
                 total_pages + asg_i,
                 total_steps,
-                f"면 안 차이 표시 중 — {asg['index']}면 ({asg_i + 1}/{total_pages})",
+                f"면 안 차이 표시 중 — 참고 {asg['index']}면 ({asg_i + 1}/{total_pages})",
             )
         gen_uni = str(asg["gen_unicode"])
         ref_uni = str(asg["ref_unicode"])
         gen_rev = str(asg["gen_reverse"])
         ref_rev = str(asg["ref_reverse"])
-        if asg["matched"] and ref_uni:
+        if asg["matched"] and gen_uni:
             g_uni, r_uni, uni_anchors = _annotate_pair(
                 gen_uni, ref_uni, min_match=min_match, max_anchors=max_anchors
             )
@@ -531,10 +536,10 @@ def build_review_pages(
                 gen_rev, ref_rev, min_match=min_match, max_anchors=max_anchors
             )
         else:
-            g_uni = _split_masked_lines(gen_uni, [True] * len(gen_uni))
-            r_uni = []
-            g_rev = _split_masked_lines(gen_rev, [True] * len(gen_rev))
-            r_rev = []
+            g_uni = []
+            r_uni = _split_masked_lines(ref_uni, [True] * len(ref_uni))
+            g_rev = []
+            r_rev = _split_masked_lines(ref_rev, [True] * len(ref_rev))
             uni_anchors = []
             rev_anchors = []
 
@@ -544,8 +549,8 @@ def build_review_pages(
                 "matched": asg["matched"],
                 "clipped": asg["clipped"],
                 "anchor_size": asg["anchor_size"],
-                "ref_start": asg["ref_start"],
-                "ref_end": asg["ref_end"],
+                "gen_start": asg["gen_start"],
+                "gen_end": asg["gen_end"],
                 "window_len": asg["window_len"],
                 "generated": {
                     "unicode_lines": g_uni,
@@ -573,12 +578,12 @@ def build_review_pages(
     unassigned_chars = sum(int(g["size"]) for g in unassigned)
     return {
         "review_pages": review_pages,
-        "unassigned_reference": unassigned,
+        "unassigned_generated": unassigned,
         "assignment_summary": {
-            "generated_pages": len(gen_pages),
-            "reference_pages": ref_flat["page_count"],
+            "generated_pages": gen_flat["page_count"],
+            "reference_pages": len(ref_pages),
             "matched_pages": matched_n,
-            "unmatched_pages": len(gen_pages) - matched_n,
+            "unmatched_pages": len(ref_pages) - matched_n,
             "unassigned_spans": len(unassigned),
             "unassigned_chars": unassigned_chars,
             "min_match": min_match,

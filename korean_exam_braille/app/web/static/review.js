@@ -111,28 +111,28 @@
     const page = pages[idx];
     const gen = page.generated || {};
     const ref = page.reference || {};
-    renderAnnotated(views.genBraille, gen.unicode_lines, "(생성 점자 없음)");
     renderAnnotated(
-      views.refBraille,
-      ref.unicode_lines,
-      page.matched ? "(참고 구간 없음)" : "(이 면에 대응하는 참고 구간 없음)"
+      views.genBraille,
+      gen.unicode_lines,
+      page.matched ? "(생성 구간 없음)" : "(이 면에 대응하는 생성 구간 없음)"
     );
-    renderAnnotated(views.genReverse, gen.reverse_lines, "(생성 역점역 없음)");
+    renderAnnotated(views.refBraille, ref.unicode_lines, "(참고 점자 없음)");
     renderAnnotated(
-      views.refReverse,
-      ref.reverse_lines,
-      page.matched ? "(참고 역점역 없음)" : "(이 면에 대응하는 참고 구간 없음)"
+      views.genReverse,
+      gen.reverse_lines,
+      page.matched ? "(생성 역점역 없음)" : "(이 면에 대응하는 생성 구간 없음)"
     );
+    renderAnnotated(views.refReverse, ref.reverse_lines, "(참고 역점역 없음)");
 
     if (page.matched) {
       const clip = page.clipped ? " · 창 잘림" : "";
       pageMeta.textContent =
-        `참고 오프셋 ${page.ref_start}–${page.ref_end}` +
+        `생성 오프셋 ${page.gen_start}–${page.gen_end}` +
         ` · 창 ${page.window_len}자 · 면 앵커 ${page.anchor_size}자` +
         ` · 면내 앵커 ${(page.anchors && page.anchors.unicode && page.anchors.unicode.length) || 0}개` +
         clip;
     } else {
-      pageMeta.textContent = "참고에서 충분한 최장 일치를 찾지 못했습니다.";
+      pageMeta.textContent = "생성에서 충분한 최장 일치를 찾지 못했습니다.";
     }
   }
 
@@ -144,12 +144,12 @@
 
     const s = data.assignment_summary || {};
     const c = data.compare || {};
-    const gaps = data.unassigned_reference || [];
+    const gaps = data.unassigned_generated || [];
     summaryEl.textContent =
       `생성 ${data.generated_name || "—"} · 참고 ${data.reference_name || "—"}` +
-      ` · 면 배정 ${s.matched_pages || 0}/${s.generated_pages || 0}` +
-      ` · 미배정 생성 면 ${s.unmatched_pages || 0}` +
-      ` · 참고 누락 ${s.unassigned_spans || 0}구간/${s.unassigned_chars || 0}자` +
+      ` · 면 배정 ${s.matched_pages || 0}/${s.reference_pages || 0}` +
+      ` · 미배정 참고 면 ${s.unmatched_pages || 0}` +
+      ` · 생성 누락 ${s.unassigned_spans || 0}구간/${s.unassigned_chars || 0}자` +
       ` (최소 일치 ${s.min_match || 16}자 · 면내 앵커 최대 ${s.max_anchors || 5})` +
       ` · 셀 일치 ${c.cell_equal}/${c.cell_total} (${pct(c.cell_match_ratio)})` +
       (gaps.length
@@ -178,7 +178,7 @@
   }
 
   async function loadBundle() {
-    setStatus("생성 면마다 참고 구간을 배정·비교하는 중…");
+    setStatus("참고 면마다 생성 구간을 배정·비교하는 중…");
     btnCompare.disabled = true;
     showProgress(0, 1, "비교 준비 중…");
     try {

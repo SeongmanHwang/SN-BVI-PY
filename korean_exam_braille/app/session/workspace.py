@@ -287,7 +287,7 @@ class ConversionWorkspace:
         *,
         on_progress=None,
     ) -> dict[str, object]:
-        """생성 BRF ↔ 참고 BRF 검토 스냅샷 (생성 면 기준 창 배정)."""
+        """생성 BRF ↔ 참고 BRF 검토 스냅샷 (참고 면 기준 창 배정)."""
         generated = self.review_generated_brf_text()
         if not self.reference_brf_text:
             raise ValueError("참고 BRF를 먼저 업로드하세요.")
