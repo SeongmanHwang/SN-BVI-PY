@@ -12,6 +12,21 @@ def test_square_brackets_and_particles():
     assert r("820,a;0w") == "[A]의"
 
 
+def test_jong_digraph_18_yields_to_square_bracket_pair():
+    """겹받침 18(ㄾ)이 여는 대괄호 82 를 훔치지 않는다.
+
+    뒤에 ;0 이 있으면 1=종성 ㄹ, 82=[ 로 나눈다.
+    회귀: <4o182<5co1;0 → 앞잁<U:2>암닐] (잘못)
+    """
+    from korean_exam_braille.app.brf.ascii_braille import unicode_to_ascii
+
+    assert r("<4o182<5co1;0") == "앞일[암닐]"
+    uni = "⠣⠲⠕⠂⠦⠆⠣⠢⠉⠕⠂⠰⠴"
+    assert r(unicode_to_ascii(uni)) == "앞일[암닐]"
+    # 닫는 ] 없으면 기존처럼 ㄾ 겹받침
+    assert r("o18") == "잁"
+
+
 def test_bracket_uri_mal_not_middot():
     """[우리말]: 종성 ㄹ(1)+;0(]) 이 가운뎃점 1; 보다 우선.
 

@@ -91,6 +91,16 @@ def _is_tail_boundary(chars: list[str], i: int) -> bool:
     return matched is not None and matched[0] in {"<u>", "</u>"}
 
 
+def _is_period_disambig_boundary(chars: list[str], after_i: int) -> bool:
+    """종성 ㅍ vs 마침표 구분용 경계.
+
+    공백·EOL·밑줄(,- / -')·닫는 따옴표/괄호 앞에서 ``4``를 마침표 후보로 본다.
+    """
+    if _is_tail_boundary(chars, after_i):
+        return True
+    return after_i < len(chars) and _starts_closing_multi(chars, after_i)
+
+
 # 종성 ㅌ이 붙었을 때 실제 어휘로 자주 쓰이는 음절 (물음표와 구분)
 _COMMON_TIEUT_SYLLABLES = frozenset(
     "같겉곁끝밑밭얕옅맡핥숱"
@@ -216,6 +226,9 @@ def _match_punct(chars: list[str], i: int) -> tuple[str, int] | None:
     대괄호 `;0`(]) 우선: 가운뎃점 ``1;`` 과 겹치는 ``1;0`` 은
     종성 ㄹ(``1``)+닫는 대괄호(``;0``)로 나누도록 ``1;`` 일치를 포기한다.
     (예: ``82m"oe1;0`` → ``[우리말]``, 잘못되면 ``[우리마·<U:0>``)
+
+    겹받침 ``18``(ㄾ) vs 여는 대괄호 ``82``: 뒤에 ``;0`` 짝이 있으면
+    종성 ㄹ + ``[`` 로 나눈다 (``…182…;0``).
     """
     for key, ink in _PUNCT_MULTI_SORTED:
         got = _slice_norm(chars, i, len(key))
@@ -313,6 +326,24 @@ def _starts_closing_multi(chars: list[str], i: int) -> bool:
     return False
 
 
+def _has_closing_square_ahead(chars: list[str], start: int) -> bool:
+    """``start`` 이후에 닫는 대괄호 ``;0`` 이 있는지."""
+    j = max(start, 0)
+    while j + 1 < len(chars):
+        if _slice_norm(chars, j, 2) == ";0":
+            return True
+        j += 1
+    return False
+
+
+def _opens_square_bracket(chars: list[str], i: int) -> bool:
+    """여는 대괄호 ``82`` (지문 범위 82#…;0 제외)."""
+    if _slice_norm(chars, i, 2) != "82":
+        return False
+    rest = normalize_brf_ascii("".join(chars[i:]))
+    return not _PASSAGE_RANGE_ASCII.match(rest)
+
+
 def _take_vowel(chars: list[str], i: int) -> tuple[str, int] | None:
     if i >= len(chars):
         return None
@@ -342,7 +373,8 @@ def _take_final(
 
     종성 ㅍ과 마침표는 동일 셀(ASCII ``4``):
       - 점역: 두 음절 이하 어절 뒤 마침표 앞에 공백을 넣음
-      - 역점역: 공백 없이 짧은 어절(완성 중 포함 ≤2음절) 뒤 ``4`` → 종성 ㅍ,
+      - 역점역: 공백·EOL·밑줄·닫는부호 앞에서,
+                짧은 어절(완성 중 포함 ≤2음절) 뒤 ``4`` → 종성 ㅍ,
                 세 음절 이상 어절 뒤 ``4`` → 마침표
 
     종성 ㅌ과 물음표는 동일 셀(ASCII ``8``):
@@ -364,11 +396,15 @@ def _take_final(
 
     if nxt is not None and (n + nxt) in JONGSEONG_DIGRAPHS:
         # 겹받침 vs 종성+닫는부호: 두 칸이 닫는 복합이면 포기
-        if not _starts_closing_multi(chars, i + 1):
+        # 겹받침 18(ㄾ) vs 여는 대괄호 82: 뒤에 ;0 짝이 있으면 대괄호 우선
+        if not _starts_closing_multi(chars, i + 1) and not (
+            _opens_square_bracket(chars, i + 1)
+            and _has_closing_square_ahead(chars, i + 3)
+        ):
             return JONGSEONG_DIGRAPHS[n + nxt], i + 2, False
 
     # 마침표(4) ↔ 종성 ㅍ(4) — 어절 음절 수로 구분
-    if n == "4" and _is_boundary(nxt):
+    if n == "4" and _is_period_disambig_boundary(chars, i + 1):
         # +1: 지금 조립 중인 음절
         word_syl = _out_word_hangul_count(out) + 1
         if word_syl <= 2:

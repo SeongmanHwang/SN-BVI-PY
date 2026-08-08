@@ -48,6 +48,22 @@ def test_reverse_long_bare_4_is_period():
     assert r("jbcoi4") == "합니다."
 
 
+def test_reverse_period_before_closing_quote_and_underline():
+    """긴 어절 뒤 4가 닫는따옴표·밑줄 앞이면 마침표."""
+    from korean_exam_braille.app.brf.ascii_braille import unicode_to_ascii
+
+    assert r("e3c</i40'") == "만났다.’"
+    assert r("e3c</i4-'") == "만났다.</u>"
+    uni = "⠰⠟⠈⠍⠺⠐⠀⠊⠿⠠⠗⠶⠮⠀⠑⠒⠉⠣⠌⠊⠲⠴⠄⠐⠥"
+    assert r(unicode_to_ascii(uni)) == "친구의, 동생을 만났다.’로"
+
+
+def test_reverse_short_4_before_quote_stays_jong():
+    """짧은 어절 + 공백 없는 4 + 닫는따옴표 → 종성 ㅍ 유지."""
+    assert r("$40'") == "갚’"
+    assert r("<40'") == "앞’"
+
+
 def test_roundtrip_ap_and_period():
     assert r(h("앞")) == "앞"
     assert r(h("아.")) == "아."
