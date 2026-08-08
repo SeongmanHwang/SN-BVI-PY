@@ -55,6 +55,17 @@ def test_middot_has_single_space_on_both_sides():
     assert reverse_translate_line(expected) == "국어 · 영어"
 
 
+def test_hangul_araea_and_legacy_placeholder_are_middot():
+    """표 빈칸 ㆍ 와 옛 자리표시 =?(⠿⠹)는 가운뎃점으로 본다."""
+    assert hangul_text_to_ascii("ㆍ") == "1;"
+    assert hangul_text_to_ascii("가  ㆍ  나") == f"{hangul_text_to_ascii('가')} 1; {hangul_text_to_ascii('나')}"
+    assert reverse_translate_line("=?") == "·"
+    assert reverse_translate_line(" =? ") == " · "
+    assert reverse_translate_line(hangul_text_to_ascii("ㆍ")) == "·"
+    assert "옹" not in reverse_translate_line("=?")
+    assert "억" not in reverse_translate_line("=?")
+
+
 def test_bullet_operator_is_dot5_period_with_trailing_space():
     """항목 불릿 ∙ = ⠐⠲(\"4) + 뒤 공백. 역점역은 ∙ 로 복원."""
     body = hangul_text_to_ascii("독특한")

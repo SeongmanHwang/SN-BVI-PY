@@ -7,9 +7,14 @@ from pathlib import Path
 import fitz
 
 from korean_exam_braille.app.pdf.extractor import extract_page_spans, extract_pdf
-from korean_exam_braille.app.pdf.models import PdfPageStructure
+from korean_exam_braille.app.pdf.models import (
+    PdfPageStructure,
+    PdfTable,
+    PdfTableCell,
+)
 from korean_exam_braille.app.pdf.tables import (
     detect_vector_tables,
+    format_table_row_texts,
     vector_table_diagnostics,
 )
 
@@ -215,3 +220,94 @@ def test_taller_same_width_verticals_are_ignored():
     assert (tables[0].row_count, tables[0].column_count) == (2, 4)
     assert abs(tables[0].bbox[3] - 568.3) < 1.0
     doc.close()
+
+
+def test_detect_two_level_header_with_merged_cells():
+    """부분 가로·세로선으로 2단 헤더(rowspan/colspan)를 복원한다."""
+    doc = fitz.open()
+    page = doc.new_page(width=500, height=700)
+    # leaf: 구분 | 접사 | 어근 | 접사 | 어미
+    xs = [120.0, 155.0, 208.0, 281.0, 340.0, 410.0]
+    # 헤더 2단 + 데이터 1행
+    ys = [430.0, 450.0, 470.0, 495.0]
+    font = "C:/Windows/Fonts/malgun.ttf"
+    page.insert_font(fontname="malgun", fontfile=font)
+
+    def put(x: float, y: float, text: str, size: float = 8.0) -> None:
+        page.insert_text((x, y), text, fontsize=size, fontname="malgun")
+
+    # 외곽·전체 폭 가로선 (헤더 중간 가로선은 제외)
+    for y in (ys[0], ys[2], ys[3]):
+        page.draw_line(fitz.Point(xs[0], y), fitz.Point(xs[-1], y), width=0.5)
+    # 어간 영역만 가로지르는 헤더 2단 가로선
+    page.draw_line(fitz.Point(xs[1], ys[1]), fitz.Point(xs[4], ys[1]), width=0.5)
+
+    # 전체 높이 세로선: 외곽 + 구분|어간 + 어간|어미
+    for x in (xs[0], xs[1], xs[4], xs[5]):
+        page.draw_line(fitz.Point(x, ys[0]), fitz.Point(x, ys[-1]), width=0.5)
+    # 짧은 중간 세로선: 헤더 2단 아래부터
+    for x in (xs[2], xs[3]):
+        page.draw_line(fitz.Point(x, ys[1]), fitz.Point(x, ys[-1]), width=0.5)
+
+    # 텍스트 배치 (병합 영역 중심)
+    put(xs[0] + 8, ys[0] + 28, "구분")
+    put(xs[1] + 55, ys[0] + 12, "어간")
+    put(xs[4] + 12, ys[0] + 28, "어미")
+    put(xs[1] + 8, ys[1] + 14, "접사")
+    put(xs[2] + 12, ys[1] + 14, "어근")
+    put(xs[3] + 12, ys[1] + 14, "접사")
+    put(xs[0] + 8, ys[2] + 16, "㉠")
+    put(xs[1] + 12, ys[2] + 16, "ㆍ")
+    put(xs[2] + 4, ys[2] + 16, "높-, 푸르-", 7)
+    put(xs[3] + 12, ys[2] + 16, "ㆍ")
+    put(xs[4] + 12, ys[2] + 16, "-며")
+
+    tables = detect_vector_tables(page, extract_page_spans(page, 1))
+    assert len(tables) == 1
+    table = tables[0]
+    assert (table.row_count, table.column_count) == (3, 5)
+
+    by_pos = {(c.row, c.column): c for c in table.cells}
+    assert by_pos[(0, 0)].text == "구분"
+    assert by_pos[(0, 0)].rowspan == 2
+    assert by_pos[(0, 1)].text == "어간"
+    assert by_pos[(0, 1)].colspan == 3
+    assert by_pos[(0, 4)].text == "어미"
+    assert by_pos[(0, 4)].rowspan == 2
+    assert by_pos[(1, 1)].text == "접사"
+    assert by_pos[(1, 2)].text == "어근"
+    assert by_pos[(1, 3)].text == "접사"
+
+    rows = format_table_row_texts(table)
+    assert rows[0] == "구분  어간(접사  어근  접사)  어미"
+    assert rows[1] == "㉠  ㆍ  높-, 푸르-  ㆍ  -며"
+    doc.close()
+
+
+def test_table_cell_span_roundtrip_in_page_dict():
+    table = PdfTable(
+        bbox=(0.0, 0.0, 10.0, 10.0),
+        row_count=2,
+        column_count=3,
+        cells=[
+            PdfTableCell(
+                row=0,
+                column=0,
+                bbox=(0.0, 0.0, 3.0, 10.0),
+                text="a",
+                rowspan=2,
+                colspan=1,
+            ),
+            PdfTableCell(
+                row=0,
+                column=1,
+                bbox=(3.0, 0.0, 10.0, 5.0),
+                text="b",
+                rowspan=1,
+                colspan=2,
+            ),
+        ],
+    )
+    restored = PdfTable.from_dict(table.to_dict())
+    assert restored.cells[0].rowspan == 2
+    assert restored.cells[1].colspan == 2

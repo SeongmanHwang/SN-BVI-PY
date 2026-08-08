@@ -148,6 +148,8 @@ class PdfTableCell:
     column: int
     bbox: BBox
     text: str = ""
+    rowspan: int = 1
+    colspan: int = 1
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -155,6 +157,8 @@ class PdfTableCell:
             "column": self.column,
             "bbox": list(self.bbox),
             "text": self.text,
+            "rowspan": self.rowspan,
+            "colspan": self.colspan,
         }
 
     @classmethod
@@ -165,6 +169,8 @@ class PdfTableCell:
             column=int(data["column"]),
             bbox=(float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3])),
             text=str(data.get("text", "")),
+            rowspan=int(data.get("rowspan", 1)),
+            colspan=int(data.get("colspan", 1)),
         )
 
 

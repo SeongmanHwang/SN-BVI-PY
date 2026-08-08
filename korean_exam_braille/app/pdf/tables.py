@@ -211,26 +211,88 @@ def _matches_band_height(
     return abs((segment[1] - segment[0]) - band_height) <= _GRID_TOL
 
 
-def _table_from_grid(
+def _has_vertical_edge(
+    vertical: list[tuple[float, float, float]],
+    x: float,
+    y0: float,
+    y1: float,
+) -> bool:
+    return any(
+        abs(vx - x) <= _GRID_TOL and _covers(vy0, vy1, y0, y1)
+        for vy0, vy1, vx in vertical
+    )
+
+
+def _has_horizontal_edge(
+    horizontal: list[tuple[float, float, float]],
+    y: float,
+    x0: float,
+    x1: float,
+) -> bool:
+    return any(
+        abs(hy - y) <= _GRID_TOL and _covers(hx0, hx1, x0, x1)
+        for hx0, hx1, hy in horizontal
+    )
+
+
+def _table_from_merge_grid(
     xs: list[float],
     ys: list[float],
+    horizontal: list[tuple[float, float, float]],
+    vertical: list[tuple[float, float, float]],
     spans: list[PdfSpan],
 ) -> PdfTable | None:
+    """부분 선 유무로 rowspan/colspan을 추론한 표를 만든다."""
     if len(xs) < 3 or len(ys) < 3:
         return None
     row_count, column_count = len(ys) - 1, len(xs) - 1
     if row_count * column_count < 4:
         return None
 
+    covered: set[tuple[int, int]] = set()
     cells: list[PdfTableCell] = []
-    occupied = 0
+    occupied_atomic = 0
     for row in range(row_count):
         for column in range(column_count):
-            bbox = (xs[column], ys[row], xs[column + 1], ys[row + 1])
+            if (row, column) in covered:
+                continue
+            colspan = 1
+            while column + colspan < column_count:
+                edge_x = xs[column + colspan]
+                if _has_vertical_edge(vertical, edge_x, ys[row], ys[row + 1]):
+                    break
+                colspan += 1
+            rowspan = 1
+            while row + rowspan < row_count:
+                edge_y = ys[row + rowspan]
+                if _has_horizontal_edge(
+                    horizontal, edge_y, xs[column], xs[column + colspan]
+                ):
+                    break
+                rowspan += 1
+            for rr in range(row, row + rowspan):
+                for cc in range(column, column + colspan):
+                    covered.add((rr, cc))
+            bbox = (
+                xs[column],
+                ys[row],
+                xs[column + colspan],
+                ys[row + rowspan],
+            )
             text = _text_in_bbox(spans, bbox)
-            occupied += bool(text)
-            cells.append(PdfTableCell(row=row, column=column, bbox=bbox, text=text))
-    if occupied / len(cells) < _MIN_TEXT_OCCUPANCY:
+            if text:
+                occupied_atomic += rowspan * colspan
+            cells.append(
+                PdfTableCell(
+                    row=row,
+                    column=column,
+                    bbox=bbox,
+                    text=text,
+                    rowspan=rowspan,
+                    colspan=colspan,
+                )
+            )
+    if occupied_atomic / (row_count * column_count) < _MIN_TEXT_OCCUPANCY:
         return None
     return PdfTable(
         bbox=(xs[0], ys[0], xs[-1], ys[-1]),
@@ -259,39 +321,82 @@ def _group_aligned_horizontals(
     return groups
 
 
+def _local_segments_in_band(
+    horizontal: list[tuple[float, float, float]],
+    vertical: list[tuple[float, float, float]],
+    *,
+    left: float,
+    right: float,
+    top: float,
+    bottom: float,
+) -> tuple[list[tuple[float, float, float]], list[tuple[float, float, float]]]:
+    """표 bbox 안의 부분 가로·세로선을 모은다(짧은 내부선 포함)."""
+    local_h = [
+        segment
+        for segment in horizontal
+        if top - _GRID_TOL <= segment[2] <= bottom + _GRID_TOL
+        and min(segment[1], right) - max(segment[0], left) >= _MIN_CELL_SIZE
+    ]
+    local_v = [
+        segment
+        for segment in vertical
+        if left - _GRID_TOL <= segment[2] <= right + _GRID_TOL
+        and min(segment[1], bottom) - max(segment[0], top) >= _MIN_CELL_SIZE
+    ]
+    return local_h, local_v
+
+
 def _tables_from_line_grid(
     horizontal: list[tuple[float, float, float]],
     vertical: list[tuple[float, float, float]],
     spans: list[PdfSpan],
 ) -> list[PdfTable]:
-    """정렬된 가로선 묶음의 폭 안에서, 세로선이 실제로 닫는 구간만 표로 만든다."""
+    """전체 폭 가로선으로 외곽을 잡고, 부분 선으로 병합 셀 격자를 복원한다."""
     candidates: list[PdfTable] = []
     for group in _group_aligned_horizontals(horizontal):
-        ys = _cluster_coords([segment[2] for segment in group])
-        if len(ys) < 3:
+        frame_ys = _cluster_coords([segment[2] for segment in group])
+        if len(frame_ys) < 3:
             continue
         left = sum(segment[0] for segment in group) / len(group)
         right = sum(segment[1] for segment in group) / len(group)
         # 같은 폭의 자료 박스 가로선까지 한 묶음이 될 수 있으므로,
-        # 전체 높이가 아니라 세로선이 덮는 부분 구간만 표 후보로 본다.
-        for top_index, top in enumerate(ys):
-            for bottom_index in range(top_index + 2, len(ys)):
-                bottom = ys[bottom_index]
+        # 외곽 세로선이 덮는 부분 구간만 표 후보로 본다.
+        for top_index, top in enumerate(frame_ys):
+            for bottom_index in range(top_index + 2, len(frame_ys)):
+                bottom = frame_ys[bottom_index]
                 if bottom - top < _MIN_CELL_SIZE * 2:
                     continue
-                spanning_vertical = [
+                outer_vertical = [
                     segment
                     for segment in vertical
                     if _covers(segment[0], segment[1], top, bottom)
                     and left - _GRID_TOL <= segment[2] <= right + _GRID_TOL
                     and _matches_band_height(segment, top, bottom)
                 ]
-                xs = _cluster_coords([segment[2] for segment in spanning_vertical])
-                if len(xs) < 3:
+                outer_xs = _cluster_coords([segment[2] for segment in outer_vertical])
+                if len(outer_xs) < 2:
                     continue
+                if abs(outer_xs[0] - left) > _GRID_TOL or abs(outer_xs[-1] - right) > _GRID_TOL:
+                    continue
+                local_h, local_v = _local_segments_in_band(
+                    horizontal,
+                    vertical,
+                    left=left,
+                    right=right,
+                    top=top,
+                    bottom=bottom,
+                )
+                xs = _cluster_coords(
+                    [left, right] + [segment[2] for segment in local_v]
+                )
+                ys = _cluster_coords(
+                    [top, bottom] + [segment[2] for segment in local_h]
+                )
+                # 외곽 가로선 묶음의 행 경계도 유지한다.
+                ys = _cluster_coords(ys + frame_ys[top_index : bottom_index + 1])
                 if abs(xs[0] - left) > _GRID_TOL or abs(xs[-1] - right) > _GRID_TOL:
                     continue
-                table = _table_from_grid(xs, ys[top_index : bottom_index + 1], spans)
+                table = _table_from_merge_grid(xs, ys, local_h, local_v, spans)
                 if table is not None:
                     candidates.append(table)
 
@@ -299,6 +404,8 @@ def _tables_from_line_grid(
     candidates.sort(
         key=lambda table: (
             -((table.bbox[2] - table.bbox[0]) * (table.bbox[3] - table.bbox[1])),
+            -table.column_count,
+            -table.row_count,
             table.bbox[1],
             table.bbox[0],
         )
@@ -359,16 +466,138 @@ def detect_vector_tables(page: Any, spans: list[PdfSpan]) -> list[PdfTable]:
     return _dedupe_tables(rect_tables + line_tables)
 
 
+def _cell_owner_grid(
+    table: PdfTable,
+) -> list[list[PdfTableCell | None]]:
+    """atomic (row, col) → 덮는 셀."""
+    grid: list[list[PdfTableCell | None]] = [
+        [None] * table.column_count for _ in range(table.row_count)
+    ]
+    for cell in table.cells:
+        for row in range(cell.row, cell.row + max(cell.rowspan, 1)):
+            if row >= table.row_count:
+                break
+            for column in range(cell.column, cell.column + max(cell.colspan, 1)):
+                if column >= table.column_count:
+                    break
+                grid[row][column] = cell
+    return grid
+
+
+def _foldable_header_child_row(table: PdfTable, owner: list[list[PdfTableCell | None]]) -> int | None:
+    """row0 colspan 부모 아래 leaf 헤더가 있는 행(보통 1). 없으면 None."""
+    if table.row_count < 2:
+        return None
+    parents = [
+        cell
+        for cell in table.cells
+        if cell.row == 0 and max(cell.colspan, 1) > 1 and (cell.text or "").strip()
+    ]
+    if not parents:
+        return None
+    child_row = 1
+    for parent in parents:
+        children: list[str] = []
+        for column in range(parent.column, parent.column + parent.colspan):
+            if column >= table.column_count:
+                return None
+            child = owner[child_row][column]
+            if (
+                child is None
+                or child.row != child_row
+                or child.column != column
+                or not (child.text or "").strip()
+            ):
+                return None
+            children.append((child.text or "").strip())
+        if len(children) != parent.colspan:
+            return None
+    return child_row
+
+
+def _format_header_line(
+    table: PdfTable,
+    owner: list[list[PdfTableCell | None]],
+    *,
+    child_row: int,
+) -> str:
+    parts: list[str] = []
+    column = 0
+    while column < table.column_count:
+        cell = owner[0][column]
+        if cell is None or cell.row != 0 or cell.column != column:
+            column += 1
+            continue
+        text = (cell.text or "").strip()
+        colspan = max(cell.colspan, 1)
+        if colspan > 1:
+            children: list[str] = []
+            for child_col in range(column, column + colspan):
+                child = owner[child_row][child_col]
+                children.append("" if child is None else (child.text or "").strip())
+            parts.append(f"{text}({'  '.join(children)})")
+        else:
+            parts.append(text)
+        column += colspan
+    return "  ".join(parts)
+
+
+def _format_body_line(
+    table: PdfTable,
+    owner: list[list[PdfTableCell | None]],
+    row: int,
+) -> str:
+    parts: list[str] = []
+    column = 0
+    while column < table.column_count:
+        cell = owner[row][column]
+        if cell is None:
+            parts.append("")
+            column += 1
+            continue
+        if cell.row == row and cell.column == column:
+            parts.append((cell.text or "").strip())
+            column += max(cell.colspan, 1)
+            continue
+        column += 1
+    return "  ".join(parts)
+
+
+def format_table_rows(table: PdfTable) -> list[tuple[str, float, float]]:
+    """표 행을 (묵자, y0, y1)로 직렬화한다. 계층 헤더는 한 줄로 접는다."""
+    if not table.cells:
+        return []
+    owner = _cell_owner_grid(table)
+    child_row = _foldable_header_child_row(table, owner)
+    skip_rows = {child_row} if child_row is not None else set()
+    rows: list[tuple[str, float, float]] = []
+    for row in range(table.row_count):
+        if row in skip_rows:
+            continue
+        if row == 0 and child_row is not None:
+            text = _format_header_line(table, owner, child_row=child_row)
+            header_cells = [
+                cell
+                for cell in table.cells
+                if cell.row in {0, child_row}
+            ]
+        else:
+            text = _format_body_line(table, owner, row)
+            header_cells = [cell for cell in table.cells if cell.row == row]
+        if not header_cells and not text.strip():
+            continue
+        if not header_cells:
+            # rowspan만으로 덮인 행 — 본문 토큰이 있으면 bbox는 표 폭·행 추정 불가 시 skip
+            continue
+        y0 = min(cell.bbox[1] for cell in header_cells)
+        y1 = max(cell.bbox[3] for cell in header_cells)
+        rows.append((text, y0, y1))
+    return rows
+
+
 def format_table_row_texts(table: PdfTable) -> list[str]:
     """표 행을 묵자 한 줄씩으로 직렬화한다."""
-    rows: list[str] = []
-    for row in range(table.row_count):
-        cells = sorted(
-            (cell for cell in table.cells if cell.row == row),
-            key=lambda cell: cell.column,
-        )
-        rows.append("  ".join((cell.text or "").strip() for cell in cells))
-    return rows
+    return [text for text, _y0, _y1 in format_table_rows(table)]
 
 
 def box_matches_table(box: BBox, tables: list[PdfTable], *, tol: float = 3.0) -> bool:
@@ -414,13 +643,7 @@ def promote_tables_into_lines(
     ]
     promoted: list[PdfLine] = []
     for table_index, table in enumerate(tables):
-        row_texts = format_table_row_texts(table)
-        for row, text in enumerate(row_texts):
-            row_cells = [cell for cell in table.cells if cell.row == row]
-            if not row_cells:
-                continue
-            y0 = min(cell.bbox[1] for cell in row_cells)
-            y1 = max(cell.bbox[3] for cell in row_cells)
+        for row, (text, y0, y1) in enumerate(format_table_rows(table)):
             promoted.append(
                 PdfLine(
                     id=f"p{page_number}-table{table_index}-r{row}",
