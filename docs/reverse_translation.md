@@ -8,9 +8,11 @@
 ## 1. 모듈 구조
 
 ```text
+common/
+  korean_tables.py      초·중·종, 약자/약어, 온표 본문, 문장부호 표 (점역·역점역 공유)
+
 brf/
   ascii_braille.py      Braille ASCII ↔ 유니코드 점자, ` → @ 정규화
-  korean_tables.py      초·중·종, 약자/약어, 온표 본문, 문장부호 표
   reverse_translator.py 행 단위 상태 기계 역점역 (진입점)
   parser.py             BRF 파싱 시 line.reverse_text 채움
   exam_diff.py          역점역 묵자로 지문/문항 앵커 내용 비교
@@ -24,7 +26,7 @@ braille/
 |------|------|
 | 진입점 | `reverse_translate_line(raw_ascii: str) -> str` |
 | 호출 | `parser` (행마다), `exam_diff` (내용 비교), BRF Inspector UI |
-| 표 소스 | `korean_tables` — 정방향과 동일 셀 정의 |
+| 표 소스 | `common.korean_tables` — 정방향과 동일 셀 정의 |
 
 정방향 인코딩은 `braille/translator.hangul_text_to_ascii` / `TableBrailleTranslator`이며, 역점역과 **같은 표를 쓰되 알고리즘은 대칭이 아니다** (약자·온표·수표는 문맥 의존).
 
@@ -77,7 +79,7 @@ flowchart TD
 
 ---
 
-## 4. `korean_tables`에서 역점역이 쓰는 것
+## 4. `common.korean_tables`에서 역점역이 쓰는 것
 
 | 상수/표 | 용도 |
 |---------|------|

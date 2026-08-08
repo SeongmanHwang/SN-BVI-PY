@@ -47,7 +47,7 @@ PDF 파일
 
 | 패키지 | 역할 | 기본 구현 |
 |--------|------|-----------|
-| `common/` | 구조 태그·Exam 노드 타입 상수 | — |
+| `common/` | 구조 태그·Exam 노드 타입·점역 표·묵자 구조 정규식 | — |
 | `pdf/` | PDF → 물리 구조 문서 | `DefaultPdfStructureExtractor` |
 | `exam/` | 물리 구조 → 의미 트리·관계 | `RuleExamStructureBuilder`, `RuleExamStructureValidator` |
 | `braille/` | Exam/묵자 → 점자 시퀀스 | `TableBrailleTranslator` |
@@ -77,7 +77,7 @@ PDF 파일
 4. **블록** (`block_builder`): 행을 문단/구조 단위로 병합.  
    - 새 블록 시작 휴리스틱: `[N~M]`, `N.`, ①–⑤, 〈보기〉, 긴 구분선 등 (`_BLOCK_START`).
 5. **읽기 순서** (`reading_order`): 열·수직 순으로 `reading_order` 부여.
-6. **후보 태그** (`candidates`): 정규식·위치로 Header/Question/Choice/PassageGroup 등 `candidate_tags` 부여.
+6. **후보 태그** (`candidates`): `common.patterns` 정규식·위치로 Header/Question/Choice/PassageGroup 등 `candidate_tags` 부여.
 
 진단 UI는 **읽기 전용**이다. 병합·분할·태그 덮어쓰기는 제품 UI에서 제거했고, `PdfStructureService`·테스트에만 남는다. **제품 목표는 이 단계 자동 정확도를 올려 UI 수정을 불필요하게 하는 것**이다.
 
@@ -88,7 +88,7 @@ PDF 파일
 1. 페이지·`reading_order` 순으로 블록 순회.
 2. 블록의 tags/candidate_tags에서 우선순위로 대표 태그 선택 (Header > … > Question > Choice …).
 3. 상태 기계적으로 PassageGroup / Question / Choice / ExampleBox 등을 트리에 부착.
-4. `[N~M]`·문항 번호 정규식으로 메타데이터(`question_number` 등) 채움.
+4. `[N~M]`·문항 번호(`common.patterns`)로 메타데이터(`question_number` 등) 채움.
 5. 지문↔문항 등 `ExamRelation` 생성.
 
 `RuleExamStructureValidator`: 문항 수·선택지 개수 등 전역 경고.
@@ -98,7 +98,7 @@ PDF 파일
 `TableBrailleTranslator`:
 
 1. Exam 트리를 순회하며 노드 텍스트를 토큰화.
-2. 한글: 음절 분해 → 초·중·종 + 약자/약어 표 (`korean_tables`, CV/VC, 된소리 등) → ASCII 셀.
+2. 한글: 음절 분해 → 초·중·종 + 약자/약어 표 (`common.korean_tables`, CV/VC, 된소리 등) → ASCII 셀.
 3. 시험 특수 형태: `[N~M]` → `82#…`, `N.` → `#x4`, ① → `#1` 등 (국내 참고 BRF 관례에 맞춤).
 4. 출력: `BrailleSequence` 목록 (노드 타입·source id 메타 포함).
 

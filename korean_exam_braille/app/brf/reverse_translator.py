@@ -14,7 +14,7 @@ from __future__ import annotations
 import re
 
 from korean_exam_braille.app.brf.ascii_braille import normalize_brf_ascii
-from korean_exam_braille.app.brf.korean_tables import (
+from korean_exam_braille.app.common.korean_tables import (
     ABBREV_CV,
     ABBREV_GEOT,
     ABBREV_VC,

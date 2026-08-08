@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, field
 
+from korean_exam_braille.app.common.patterns import PASSAGE_RANGE, QUESTION_NUM
 from korean_exam_braille.app.exam.bracket_metadata import (
     metadata_from_candidate_tags,
 )
@@ -15,11 +15,6 @@ from korean_exam_braille.app.exam.models import (
     SourceRange,
 )
 from korean_exam_braille.app.pdf.models import PdfBlock, PdfDocumentStructure
-
-_PASSAGE_RANGE = re.compile(r"\[\s*(\d{1,2})\s*[~\-–—]\s*(\d{1,2})\s*\]")
-_QUESTION_NUM = re.compile(
-    r"(?:^|\n)\s*(?:(\d{1,2})\s*[\.．。]|(\d{1,2})\s+)"
-)
 
 
 def _primary_tag(block: PdfBlock) -> str | None:
@@ -118,7 +113,7 @@ class RuleExamStructureBuilder:
             flush_group()
             orphan_question = None
             self._group_seq += 1
-            m = _PASSAGE_RANGE.search(block.text or "")
+            m = PASSAGE_RANGE.search(block.text or "")
             start_q = int(m.group(1)) if m else None
             end_q = int(m.group(2)) if m else None
             node = _node_from_block(
@@ -132,7 +127,7 @@ class RuleExamStructureBuilder:
 
         def start_question(block: PdfBlock) -> ExamNode:
             nonlocal orphan_question
-            m = _QUESTION_NUM.search(block.text or "")
+            m = QUESTION_NUM.search(block.text or "")
             qnum = None
             if m:
                 for g in m.groups():

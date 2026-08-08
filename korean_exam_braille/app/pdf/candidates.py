@@ -4,14 +4,7 @@ from __future__ import annotations
 
 import re
 
-_QUESTION = re.compile(
-    r"(?:^|\n)\s*(?:"
-    r"(\d{1,2})\s*[\.．。]"  # 16. / 16．
-    r"|(\d{1,2})\s+"  # 16 발문
-    r")"
-)
-
-_PASSAGE_RANGE = re.compile(r"\[\s*(\d{1,2})\s*[~\-–—]\s*(\d{1,2})\s*\]")
+from korean_exam_braille.app.common.patterns import PASSAGE_RANGE, QUESTION_NUM
 
 _CHOICE = re.compile(
     r"(?:^|\n)\s*(?:"
@@ -43,10 +36,10 @@ def detect_block_candidates(
         tags.append("Footer")
         return tags
 
-    if _PASSAGE_RANGE.search(text):
+    if PASSAGE_RANGE.search(text):
         tags.append("PassageGroup")
 
-    m = _QUESTION.search(text)
+    m = QUESTION_NUM.search(text)
     if m and "PassageGroup" not in tags:
         for g in m.groups():
             if g and g.isdigit() and 1 <= int(g) <= 45:

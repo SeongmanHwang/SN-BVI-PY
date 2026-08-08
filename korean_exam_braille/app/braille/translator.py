@@ -7,7 +7,7 @@ import re
 from korean_exam_braille.app.braille.models import BrailleSequence, BrailleToken
 from korean_exam_braille.app.brf.ascii_braille import ascii_char_to_dots
 from korean_exam_braille.app.exam.bracket_metadata import bracket_labels
-from korean_exam_braille.app.brf.korean_tables import (
+from korean_exam_braille.app.common.korean_tables import (
     ABBREV_CV,
     ABBREV_GEOT,
     ABBREV_VC,
@@ -27,6 +27,7 @@ from korean_exam_braille.app.brf.korean_tables import (
     TENSED_PREFIX,
     WORD_ABBREV,
 )
+from korean_exam_braille.app.common.patterns import PASSAGE_RANGE
 from korean_exam_braille.app.exam.models import ExamDocument, ExamNode
 from korean_exam_braille.app.common.hanja_reading import replace_hanja_with_reading
 from korean_exam_braille.app.common.opaque_text import replace_opaque_with_slash
@@ -187,7 +188,6 @@ _CHO_LIST = list(CHO_INDEX.keys())
 _JUNG_LIST = list(JUNG_INDEX.keys())
 _JONG_LIST = list(JONG_INDEX.keys())
 
-_PASSAGE_RANGE = re.compile(r"\[\s*(\d{1,2})\s*[~\-–—]\s*(\d{1,2})\s*\]")
 _QUESTION_START = re.compile(r"^(\d{1,2})\s*[\.．。]\s*")
 
 
@@ -323,7 +323,7 @@ def _encode_line(line: str) -> str:
         parts.append(_num_braille(int(m_q.group(1))) + "4 ")
         cursor = m_q.end()
 
-    for m in _PASSAGE_RANGE.finditer(line, cursor):
+    for m in PASSAGE_RANGE.finditer(line, cursor):
         parts.append(_hangul_body_to_ascii(line[cursor : m.start()]))
         parts.append(_encode_passage_range(m))
         cursor = m.end()
