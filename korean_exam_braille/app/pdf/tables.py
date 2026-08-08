@@ -4,8 +4,18 @@ from __future__ import annotations
 
 from typing import Any
 
-from korean_exam_braille.app.pdf.boxes import _dedupe_segments, _merge_collinear
-from korean_exam_braille.app.pdf.models import BBox, PdfSpan, PdfTable, PdfTableCell
+from korean_exam_braille.app.pdf.boxes import (
+    _dedupe_segments,
+    _merge_collinear,
+    line_mostly_in_box,
+)
+from korean_exam_braille.app.pdf.models import (
+    BBox,
+    PdfLine,
+    PdfSpan,
+    PdfTable,
+    PdfTableCell,
+)
 
 _COORD_TOL = 0.8
 _GRID_TOL = 1.5
@@ -191,6 +201,16 @@ def _covers(start: float, end: float, target_start: float, target_end: float) ->
     return overlap / target_length >= 0.8
 
 
+def _matches_band_height(
+    segment: tuple[float, float, float],
+    top: float,
+    bottom: float,
+) -> bool:
+    """표 구간 높이와 세로선 길이가 비슷한지. 긴 프레임 세로선을 걸러낸다."""
+    band_height = bottom - top
+    return abs((segment[1] - segment[0]) - band_height) <= _GRID_TOL
+
+
 def _table_from_grid(
     xs: list[float],
     ys: list[float],
@@ -221,39 +241,59 @@ def _table_from_grid(
     )
 
 
+def _group_aligned_horizontals(
+    horizontal: list[tuple[float, float, float]],
+) -> list[list[tuple[float, float, float]]]:
+    """양 끝(x0,x1)이 같은 가로선끼리 묶는다. 페이지 긴 세로선과 섞지 않기 위함."""
+    groups: list[list[tuple[float, float, float]]] = []
+    for segment in sorted(horizontal, key=lambda item: (item[0], item[1], item[2])):
+        x0, x1, _y = segment
+        for group in groups:
+            left = sum(item[0] for item in group) / len(group)
+            right = sum(item[1] for item in group) / len(group)
+            if abs(x0 - left) <= _GRID_TOL and abs(x1 - right) <= _GRID_TOL:
+                group.append(segment)
+                break
+        else:
+            groups.append([segment])
+    return groups
+
+
 def _tables_from_line_grid(
     horizontal: list[tuple[float, float, float]],
     vertical: list[tuple[float, float, float]],
     spans: list[PdfSpan],
 ) -> list[PdfTable]:
-    """공유 경계선의 반복 x/y와 연결률로 표 후보를 만든다."""
-    y_candidates = _cluster_coords([segment[2] for segment in horizontal])
+    """정렬된 가로선 묶음의 폭 안에서, 세로선이 실제로 닫는 구간만 표로 만든다."""
     candidates: list[PdfTable] = []
-    for top_index, top in enumerate(y_candidates):
-        for bottom in y_candidates[top_index + 2 :]:
-            if bottom - top < _MIN_CELL_SIZE * 2:
-                continue
-            spanning_vertical = [
-                segment
-                for segment in vertical
-                if _covers(segment[0], segment[1], top, bottom)
-            ]
-            xs = _cluster_coords([segment[2] for segment in spanning_vertical])
-            if len(xs) < 3:
-                continue
-            left, right = xs[0], xs[-1]
-            spanning_horizontal = [
-                segment
-                for segment in horizontal
-                if top - _GRID_TOL <= segment[2] <= bottom + _GRID_TOL
-                and _covers(segment[0], segment[1], left, right)
-            ]
-            ys = _cluster_coords([segment[2] for segment in spanning_horizontal])
-            if len(ys) < 3:
-                continue
-            table = _table_from_grid(xs, ys, spans)
-            if table is not None:
-                candidates.append(table)
+    for group in _group_aligned_horizontals(horizontal):
+        ys = _cluster_coords([segment[2] for segment in group])
+        if len(ys) < 3:
+            continue
+        left = sum(segment[0] for segment in group) / len(group)
+        right = sum(segment[1] for segment in group) / len(group)
+        # 같은 폭의 자료 박스 가로선까지 한 묶음이 될 수 있으므로,
+        # 전체 높이가 아니라 세로선이 덮는 부분 구간만 표 후보로 본다.
+        for top_index, top in enumerate(ys):
+            for bottom_index in range(top_index + 2, len(ys)):
+                bottom = ys[bottom_index]
+                if bottom - top < _MIN_CELL_SIZE * 2:
+                    continue
+                spanning_vertical = [
+                    segment
+                    for segment in vertical
+                    if _covers(segment[0], segment[1], top, bottom)
+                    and left - _GRID_TOL <= segment[2] <= right + _GRID_TOL
+                    and _matches_band_height(segment, top, bottom)
+                ]
+                xs = _cluster_coords([segment[2] for segment in spanning_vertical])
+                if len(xs) < 3:
+                    continue
+                if abs(xs[0] - left) > _GRID_TOL or abs(xs[-1] - right) > _GRID_TOL:
+                    continue
+                table = _table_from_grid(xs, ys[top_index : bottom_index + 1], spans)
+                if table is not None:
+                    candidates.append(table)
 
     # 동일 격자의 부분 후보보다 행·열을 모두 포함한 최대 후보를 우선한다.
     candidates.sort(
@@ -317,3 +357,83 @@ def detect_vector_tables(page: Any, spans: list[PdfSpan]) -> list[PdfTable]:
     ]
     line_tables = _tables_from_line_grid(horizontal, vertical, spans)
     return _dedupe_tables(rect_tables + line_tables)
+
+
+def format_table_row_texts(table: PdfTable) -> list[str]:
+    """표 행을 묵자 한 줄씩으로 직렬화한다."""
+    rows: list[str] = []
+    for row in range(table.row_count):
+        cells = sorted(
+            (cell for cell in table.cells if cell.row == row),
+            key=lambda cell: cell.column,
+        )
+        rows.append("  ".join((cell.text or "").strip() for cell in cells))
+    return rows
+
+
+def box_matches_table(box: BBox, tables: list[PdfTable], *, tol: float = 3.0) -> bool:
+    """박스 표선용 외곽이 표 격자 자체이면 True."""
+    return any(
+        all(abs(a - b) <= tol for a, b in zip(box, table.bbox)) for table in tables
+    )
+
+
+def clear_underlines_inside_tables(spans: list[PdfSpan], tables: list[PdfTable]) -> None:
+    """표 격자선을 밑줄로 오인한 span 강조를 제거한다."""
+    if not tables:
+        return
+    for span in spans:
+        cx = (span.bbox[0] + span.bbox[2]) / 2.0
+        cy = (span.bbox[1] + span.bbox[3]) / 2.0
+        if any(
+            table.bbox[0] - 1.0 <= cx <= table.bbox[2] + 1.0
+            and table.bbox[1] - 1.0 <= cy <= table.bbox[3] + 1.0
+            for table in tables
+        ):
+            span.underline_ranges = []
+            span.is_underline = False
+
+
+def promote_tables_into_lines(
+    lines: list[PdfLine],
+    tables: list[PdfTable],
+    *,
+    page_number: int,
+) -> list[PdfLine]:
+    """표 영역 원문 행을 셀 격자 행으로 바꾼다."""
+    if not lines or not tables:
+        return lines
+
+    kept = [
+        line
+        for line in lines
+        if not any(
+            line_mostly_in_box(line.bbox, table.bbox, min_overlap=0.3)
+            for table in tables
+        )
+    ]
+    promoted: list[PdfLine] = []
+    for table_index, table in enumerate(tables):
+        row_texts = format_table_row_texts(table)
+        for row, text in enumerate(row_texts):
+            row_cells = [cell for cell in table.cells if cell.row == row]
+            if not row_cells:
+                continue
+            y0 = min(cell.bbox[1] for cell in row_cells)
+            y1 = max(cell.bbox[3] for cell in row_cells)
+            promoted.append(
+                PdfLine(
+                    id=f"p{page_number}-table{table_index}-r{row}",
+                    text=text,
+                    bbox=(table.bbox[0], y0, table.bbox[2], y1),
+                    span_ids=[],
+                    page_number=page_number,
+                    reading_order=0,
+                )
+            )
+
+    merged = kept + promoted
+    merged.sort(key=lambda line: (line.bbox[1], line.bbox[0], line.id))
+    for index, line in enumerate(merged):
+        line.reading_order = index
+    return merged

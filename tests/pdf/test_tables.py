@@ -73,6 +73,14 @@ def test_extractor_preserves_table_and_tags_blocks(tmp_path: Path):
     page = extracted.pages[0]
     assert len(page.tables) == 1
     assert any("TableAsset" in block.candidate_tags for block in page.blocks)
+    table_text = "\n".join(
+        block.text
+        for block in page.blocks
+        if "TableAsset" in block.candidate_tags
+    )
+    assert "kind  yes  no  unknown" in table_text
+    assert "rate  71%  24%  5%" in table_text
+    assert "<u>" not in table_text
 
     restored = PdfPageStructure.from_dict(page.to_dict())
     assert restored.tables[0].column_count == 4
@@ -129,4 +137,81 @@ def test_plain_material_box_is_not_table():
     page.draw_rect(fitz.Rect(453.0, 580.0, 742.0, 650.0), width=0.5)
     page.insert_text((465.0, 610.0), "material 2", fontsize=9)
     assert detect_vector_tables(page, extract_page_spans(page, 1)) == []
+    doc.close()
+
+
+def test_page_long_verticals_do_not_inflate_table_width():
+    """페이지 긴 세로선이 있어도 표 가로선 폭 안의 세로선만으로 2×4를 복원한다."""
+    doc = fitz.open()
+    page = doc.new_page(width=850, height=1100)
+    xs = [453.3, 495.9, 577.9, 660.0, 742.0]
+    ys = [525.6, 547.0, 568.3]
+    values = [
+        ["kind", "yes", "no", "unknown"],
+        ["rate", "71%", "24%", "5%"],
+    ]
+    for x in xs:
+        page.draw_line(fitz.Point(x, ys[0]), fitz.Point(x, ys[-1]), width=0.5)
+    for y in ys:
+        page.draw_line(fitz.Point(xs[0], y), fitz.Point(xs[-1], y), width=0.5)
+    # 실제 시험지처럼 표 높이도 덮는 페이지 프레임 세로선.
+    for x in (87.7, 420.5, 751.9):
+        page.draw_line(fitz.Point(x, 193.0), fitz.Point(x, 960.0), width=0.5)
+    for row in range(2):
+        for column in range(4):
+            page.insert_text(
+                (xs[column] + 3.0, ys[row] + 14.0),
+                values[row][column],
+                fontsize=7,
+            )
+
+    tables = detect_vector_tables(page, extract_page_spans(page, 1))
+    assert len(tables) == 1
+    assert (tables[0].row_count, tables[0].column_count) == (2, 4)
+    assert abs(tables[0].bbox[0] - 453.3) < 1.0
+    assert abs(tables[0].bbox[2] - 742.0) < 1.0
+    assert [cell.text for cell in tables[0].cells] == [
+        "kind",
+        "yes",
+        "no",
+        "unknown",
+        "rate",
+        "71%",
+        "24%",
+        "5%",
+    ]
+    doc.close()
+
+
+def test_taller_same_width_verticals_are_ignored():
+    """같은 폭이라도 높이가 다른 세로선은 표 격자에 섞지 않는다."""
+    doc = fitz.open()
+    page = doc.new_page(width=850, height=900)
+    xs = [453.3, 495.9, 577.9, 660.0, 742.0]
+    ys = [525.6, 547.0, 568.3]
+    values = [
+        ["kind", "yes", "no", "unknown"],
+        ["rate", "71%", "24%", "5%"],
+    ]
+    for x in xs:
+        page.draw_line(fitz.Point(x, ys[0]), fitz.Point(x, ys[-1]), width=0.5)
+    for y in ys:
+        page.draw_line(fitz.Point(xs[0], y), fitz.Point(xs[-1], y), width=0.5)
+    # 표와 같은 폭의 아래 자료 박스(가로 2줄 + 훨씬 긴 세로선).
+    page.draw_line(fitz.Point(xs[0], 596.0), fitz.Point(xs[-1], 596.0), width=0.5)
+    page.draw_line(fitz.Point(xs[0], 804.0), fitz.Point(xs[-1], 804.0), width=0.5)
+    for x in (xs[0], xs[-1]):
+        page.draw_line(fitz.Point(x, 596.0), fitz.Point(x, 804.0), width=0.5)
+    for row in range(2):
+        for column in range(4):
+            page.insert_text(
+                (xs[column] + 3.0, ys[row] + 14.0),
+                values[row][column],
+                fontsize=7,
+            )
+
+    tables = detect_vector_tables(page, extract_page_spans(page, 1))
+    assert len(tables) == 1
+    assert (tables[0].row_count, tables[0].column_count) == (2, 4)
+    assert abs(tables[0].bbox[3] - 568.3) < 1.0
     doc.close()
