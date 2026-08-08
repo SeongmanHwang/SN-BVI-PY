@@ -105,6 +105,7 @@ _PUNCT_TO_ASCII: dict[str, str] = {
     ">": "07",
     "…": "444",
     "·": "1;",
+    "∙": '"4',  # 항목 불릿 ⠐⠲ — 점역 시 뒤에 공백 필수
     "～": "@9",
     "~": "@9",
     "―": "--",
@@ -471,6 +472,14 @@ def _hangul_body_to_ascii(text: str) -> str:
                     i += 1
                 if i < n:
                     out.append(" ")
+                continue
+            # 항목 불릿(∙) = ⠐⠲("4). 뒤 공백을 항상 둔다.
+            if ch == "∙":
+                out.append(_PUNCT_TO_ASCII[ch])
+                i += 1
+                while i < n and text[i] in " \t":
+                    i += 1
+                out.append(" ")
                 continue
             # 마침표(4) ↔ 종성 ㅍ(4): 두 음절 이하 어절 뒤면 앞에 공백.
             if ch == ".":

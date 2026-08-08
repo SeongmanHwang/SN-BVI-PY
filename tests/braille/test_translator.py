@@ -55,6 +55,17 @@ def test_middot_has_single_space_on_both_sides():
     assert reverse_translate_line(expected) == "국어 · 영어"
 
 
+def test_bullet_operator_is_dot5_period_with_trailing_space():
+    """항목 불릿 ∙ = ⠐⠲(\"4) + 뒤 공백. 역점역은 ∙ 로 복원."""
+    body = hangul_text_to_ascii("독특한")
+    assert hangul_text_to_ascii("∙독특한") == f'"4 {body}'
+    assert hangul_text_to_ascii("∙ 독특한") == f'"4 {body}'
+    assert hangul_text_to_ascii("∙") == '"4 '
+    # 점역이 넣은 뒤 공백은 묵자에 남는다.
+    assert reverse_translate_line(f'"4 {body}') == "∙ 독특한"
+    assert reverse_translate_line('"4 ') == "∙ "
+
+
 def test_figure_placeholder_fixed_braille_roundtrip():
     """[그림] ↔ ⠠⠄⠈⠪⠐⠕⠢⠀⠠⠗⠶⠐⠜⠁⠠⠄ (그림 생략) 고정 왕복."""
     from korean_exam_braille.app.brf.ascii_braille import ascii_to_unicode
@@ -104,7 +115,6 @@ def test_ssang_sios_avoids_ga_abbrev():
     assert reverse_translate_line("d</") == "팠"
     assert hangul_text_to_ascii("땅을 팠다") == ",i<7! d</i"
     assert reverse_translate_line(",i<7! d</i") == "땅을 팠다"
-
 
 def test_translator_fills_cells():
     tr = TableBrailleTranslator()
