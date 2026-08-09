@@ -36,6 +36,10 @@ from korean_exam_braille.app.common.korean_tables import (
 )
 from korean_exam_braille.app.common.patterns import PASSAGE_RANGE
 from korean_exam_braille.app.exam.models import ExamDocument, ExamNode
+from korean_exam_braille.app.common.arrow_markup import (
+    ARROW_RIGHT_BRAILLE_ASCII,
+    ARROW_RIGHT_INK,
+)
 from korean_exam_braille.app.common.figure_markup import FIGURE_BRAILLE_ASCII, FIGURE_INK
 from korean_exam_braille.app.common.plot_summary_markup import (
     PLOT_SUMMARY_END_BRAILLE_ASCII,
@@ -517,6 +521,11 @@ def _hangul_body_to_ascii_masked(text: str) -> tuple[str, list[bool]]:
 
         if ch in _HIDE_X_CHARS:
             emit(_encode_hide_x_mark())
+            i += 1
+            continue
+
+        if ch == ARROW_RIGHT_INK:
+            emit(ARROW_RIGHT_BRAILLE_ASCII)
             i += 1
             continue
 

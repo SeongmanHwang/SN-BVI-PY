@@ -212,6 +212,17 @@ def test_hide_square_triangle_x_marks():
     assert reverse_translate_line(ascii_text) == src
 
 
+def test_right_arrow_reads_as_slash_hwasalpyo():
+    """→ → /화살표/ 점열, 역점역은 →."""
+    assert hangul_text_to_ascii("→") == "_/jvl1d+_/"
+    assert hangul_text_to_ascii("/화살표/") == "_/jvl1d+_/"
+    assert reverse_translate_line("_/jvl1d+_/") == "→"
+    src = "㉠묘터→㉡백파강→㉢언덕"
+    ascii_text = hangul_text_to_ascii(src)
+    assert ascii_text.count("_/jvl1d+_/") == 2
+    assert reverse_translate_line(ascii_text) == "‘ㄱ’묘터→‘ㄴ’백파강→‘ㄷ’언덕"
+
+
 def test_circled_latin_a_to_e():
     """ⓐ–ⓩ → 7a7…7z7 (①의 7#a7 과 구분)."""
     assert hangul_text_to_ascii("ⓐ") == "7a7"

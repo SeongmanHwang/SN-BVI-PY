@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from korean_exam_braille.app.braille.models import BrailleSequence
 from korean_exam_braille.app.brf.ascii_braille import ascii_char_to_dots
+from korean_exam_braille.app.common.arrow_markup import ARROW_RIGHT_BRAILLE_ASCII
 from korean_exam_braille.app.common.korean_tables import ROMAN_SIGN
 from korean_exam_braille.app.layout.models import (
     BrailleDocument,
@@ -13,6 +14,7 @@ from korean_exam_braille.app.layout.models import (
 )
 
 _SEPARATOR = "=gggggggggggggggggggggggggggggg="  # 국내 BRF 관례 (32셀)
+_NONBREAKING_ASCII = (ARROW_RIGHT_BRAILLE_ASCII,)
 
 
 def _sequence_ascii(seq: BrailleSequence) -> str:
@@ -45,6 +47,18 @@ def _sequence_roman_mask(seq: BrailleSequence, ascii_text: str) -> list[bool] | 
         if len(parts) == len(ascii_text):
             return parts
     return None
+
+
+def _move_cut_before_nonbreaking(text: str, start: int, cut: int) -> int:
+    """보호 점열 한가운데인 절단점을 점열 시작 앞으로 옮긴다."""
+    for pattern in _NONBREAKING_ASCII:
+        pos = text.find(pattern, start)
+        while pos >= 0 and pos < cut:
+            if pos < cut < pos + len(pattern):
+                # 폭 자체가 점열보다 좁으면 한 줄 보존이 불가능하다.
+                return pos if pos > start else cut
+            pos = text.find(pattern, pos + 1)
+    return cut
 
 
 def _indent_for(node_type: str | None, profile: LayoutProfile) -> int:
@@ -110,14 +124,15 @@ def _wrap_ascii(
                 piece = raw[i:n]
                 i = n
             else:
-                chunk = raw[i : i + usable]
+                cut = _move_cut_before_nonbreaking(raw, i, i + usable)
+                chunk = raw[i:cut]
                 sp = chunk.rfind(" ")
                 if sp > 0:
                     piece = chunk[:sp]
                     i = i + sp + 1
                 else:
                     piece = chunk
-                    i = i + usable
+                    i = cut
             if need_roman:
                 piece = ROMAN_SIGN + piece
             lines.append(pad + piece)

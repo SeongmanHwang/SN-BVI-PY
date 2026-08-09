@@ -115,6 +115,10 @@ def build_blocks(
             if new_block:
                 groups.append(current)
                 current = [line]
+            elif prev.bracket_label != line.bracket_label:
+                # [A]~[E] 소속 전환 — 점역 ┌──── 표지가 앞 서술까지 감싸지 않도록
+                groups.append(current)
+                current = [line]
             else:
                 current.append(line)
         groups.append(current)

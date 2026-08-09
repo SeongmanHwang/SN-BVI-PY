@@ -92,6 +92,31 @@ def test_wrap_reopens_roman_between_acronyms():
     assert "EXW" in rev and "FOB" in rev and "CIF" in rev and "DDP" in rev
 
 
+def test_wrap_keeps_arrow_pronunciation_cells_together():
+    """→의 /화살표/ 점열은 줄 경계에서 둘로 갈라지지 않는다."""
+    from korean_exam_braille.app.braille.translator import hangul_text_to_ascii
+    from korean_exam_braille.app.brf.reverse_translator import reverse_translate_line
+    from korean_exam_braille.app.common.arrow_markup import ARROW_RIGHT_BRAILLE_ASCII
+    from korean_exam_braille.app.layout.engine import _wrap_ascii
+
+    ink = "㉠묘터→㉡백파강→㉢언덕"
+    ascii_text = hangul_text_to_ascii(ink)
+    lines = _wrap_ascii(ascii_text, 32, first_indent=2, cont_indent=0)
+
+    assert sum(line.count(ARROW_RIGHT_BRAILLE_ASCII) for line in lines) == 2
+    assert all(
+        not (
+            ARROW_RIGHT_BRAILLE_ASCII[:5] in line
+            and ARROW_RIGHT_BRAILLE_ASCII not in line
+        )
+        for line in lines
+    )
+    reversed_text = "".join(
+        reverse_translate_line(line.strip()) for line in lines if line.strip()
+    )
+    assert reversed_text == "‘ㄱ’묘터→‘ㄴ’백파강→‘ㄷ’언덕"
+
+
 def test_wrap_and_choice_indent():
     engine = RuleBrailleLayoutEngine()
     profile = LayoutProfile(cells_per_line=10, choice_indent=2, lines_per_page=26)

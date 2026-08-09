@@ -249,3 +249,52 @@ def test_assign_prefers_nearer_stem():
     )
     assign_lines_to_brackets(lines, [far, near])
     assert lines[0].bracket_label == "[B]"
+
+
+def test_build_blocks_splits_before_bracket_preamble():
+    """괄호 밖 서술과 괄호 안 인용을 한 블록으로 합치지 않는다."""
+    from korean_exam_braille.app.pdf.block_builder import build_blocks
+    from korean_exam_braille.app.pdf.bracket_groups import annotate_blocks_with_brackets
+    from korean_exam_braille.app.pdf.bracket_groups import BracketGroup
+
+    lines = [
+        PdfLine("l0", "손병진을 꾸짖어 말하기를,", (60, 100, 280, 114), [], 1, 0),
+        PdfLine("l1", "“네가 국가의 녹봉을 받는", (60, 116, 280, 130), [], 1, 1),
+        PdfLine("l2", "신하로서 간사한 계집의 말을 듣", (60, 132, 280, 146), [], 1, 2),
+        PdfLine("l3", "바깥 이어지는 문장.", (60, 160, 280, 174), [], 1, 3),
+    ]
+    lines[0].bracket_label = None
+    lines[1].bracket_label = "[B]"
+    lines[2].bracket_label = "[B]"
+    lines[3].bracket_label = None
+
+    blocks = build_blocks(lines, page_number=1)
+    assert len(blocks) >= 3
+    # 첫 블록은 서술만
+    assert blocks[0].line_ids == ["l0"]
+    assert "손병진" in blocks[0].text
+    assert "네가" not in blocks[0].text
+    # 인용 블록
+    quote = next(b for b in blocks if "l1" in b.line_ids)
+    assert "l0" not in quote.line_ids
+    assert "네가" in quote.text
+
+    group = BracketGroup(
+        label="[B]",
+        stem_x=400,
+        y0=110,
+        y1=150,
+        gap_y0=120,
+        gap_y1=130,
+        tick_x0=390,
+        label_bbox=(392, 122, 410, 134),
+        body_side="left",
+        line_ids=["l1", "l2"],
+    )
+    annotate_blocks_with_brackets(blocks, lines, [group])
+    start_blocks = [
+        b for b in blocks if "bracket-start:[B]" in (b.candidate_tags or [])
+    ]
+    assert len(start_blocks) == 1
+    assert "손병진" not in start_blocks[0].text
+    assert "네가" in start_blocks[0].text

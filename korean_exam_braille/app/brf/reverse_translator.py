@@ -14,6 +14,10 @@ from __future__ import annotations
 import re
 
 from korean_exam_braille.app.brf.ascii_braille import normalize_brf_ascii
+from korean_exam_braille.app.common.arrow_markup import (
+    ARROW_RIGHT_BRAILLE_ASCII,
+    ARROW_RIGHT_INK,
+)
 from korean_exam_braille.app.common.figure_markup import (
     FIGURE_BRAILLE_ASCII,
     FIGURE_INK,
@@ -385,6 +389,15 @@ def _try_hide_x_mark(chars: list[str], i: int, out: list[str]) -> int | None:
     )
 
 
+def _try_arrow_right(chars: list[str], i: int, out: list[str]) -> int | None:
+    """``_/jvl1d+_/`` (/화살표/) → →."""
+    arrow = ARROW_RIGHT_BRAILLE_ASCII
+    if _slice_norm(chars, i, len(arrow)) != arrow:
+        return None
+    out.append(ARROW_RIGHT_INK)
+    return i + len(arrow)
+
+
 def _try_choice_item_mark(chars: list[str], i: int, out: list[str]) -> int | None:
     """선택지 항목 표지 ⠇⠴ (_0) — 묵자에서는 생략."""
     if _slice_norm(chars, i, 2) != "_0":
@@ -532,6 +545,20 @@ def _take_final(
 
     # 종성 ㅎ(0) — 다음에 닫는 따옴표 2칸이 오면 종성 아님(위에서 처리)
     # 단독 0 뒤가 경계이고 직전이 모음 음절이면 종성 ㅎ 가능
+    # 종성 ㅇ(7) ↔ 드러냄+온표자모(7=…7): 표지 패턴이면 종성으로 쓰지 않음
+    if n == "7" and _match_emph_on_jamo(chars, i) is not None:
+        return None
+    # 가·나·다…(ㅏ 계열 약자 음절) 뒤 77=…7 은 강·난…보다 가+선택지 표지로 본다
+    # (참고 BRF 전위·압축). 텅(hs77…) 등 비-ㅏ 음절은 첫 7을 종성 ㅇ으로 유지.
+    if (
+        n == "7"
+        and cho is not None
+        and jung is not None
+        and (cho, jung) in ABBREV_CV.values()
+        and _peek(chars, i + 1) == "7"
+        and _match_emph_on_jamo(chars, i + 1) is not None
+    ):
+        return None
     if n in JONGSEONG:
         return JONGSEONG[n], i + 1, False
     return None
@@ -574,6 +601,16 @@ def _emit_syllable_with_optional_final(
     *,
     skip_jong: frozenset[str] | None = None,
 ) -> int:
+    # 종성 ㅇ과 드러냄 표지 7이 한 칸으로 압축된 경우(…hs7=37…, 뒤 음절 이어짐)
+    emph = _match_emph_on_jamo(chars, i_after_vowel)
+    if emph is not None:
+        mark, end = emph
+        after = _peek(chars, end)
+        if after is not None and _can_begin_syllable(after):
+            out.append(_syllable(cho, jung, "ㅇ"))
+            out.append(mark)
+            return end
+
     final = _take_final(
         chars, i_after_vowel, skip_jong=skip_jong, out=out, cho=cho, jung=jung
     )
@@ -676,6 +713,33 @@ def _match_on_sign_body(chars: list[str], i: int) -> tuple[str, int] | None:
             continue
         return jamo, end
     return None
+
+
+def _match_emph_on_jamo(chars: list[str], i: int) -> tuple[str, int] | None:
+    """드러냄+온표 자모+드러냄 ``7=…7`` → (``‘ㄱ’``, 끝 인덱스).
+
+    ㉠ 등 원문자 점열이 이 형태로 오면 선택지 관례 ``‘ㄱ’`` 로 복원한다.
+    """
+    if i >= len(chars) or _norm_cell(chars[i]) != "7":
+        return None
+    if i + 1 >= len(chars) or _norm_cell(chars[i + 1]) != ON_SIGN:
+        return None
+    matched = _match_on_sign_body(chars, i + 1)
+    if matched is None:
+        return None
+    jamo, after_body = matched
+    if after_body >= len(chars) or _norm_cell(chars[after_body]) != "7":
+        return None
+    return f"‘{jamo}’", after_body + 1
+
+
+def _try_emph_on_jamo(chars: list[str], i: int, out: list[str]) -> int | None:
+    matched = _match_emph_on_jamo(chars, i)
+    if matched is None:
+        return None
+    ink, end = matched
+    out.append(ink)
+    return end
 
 
 def _try_on_sign(chars: list[str], i: int, out: list[str]) -> int | None:
@@ -940,6 +1004,12 @@ def reverse_translate_line(raw_ascii: str) -> str:
         if jumped is not None:
             continue
 
+        # 1b3) 오른쪽 화살표 (/화살표/)
+        jumped = _try_arrow_right(chars, i, out)
+        if jumped is not None:
+            i = jumped
+            continue
+
         # 1c) 선택지 항목 표지 _0 (⠇⠴)
         jumped = _try_choice_item_mark(chars, i, out)
         if jumped is not None:
@@ -988,8 +1058,22 @@ def reverse_translate_line(raw_ascii: str) -> str:
                 continue
             # else: fall through → 옹 약자
 
-        # 3b) 드러냄표 ⠶(7) … 7 — 종성 ㅇ으로 붙지 못한 위치
+        # 3b) 드러냄+온표 자모(7=…7) — 종성 ㅇ보다 표지 우선
+        jumped = _try_emph_on_jamo(chars, i, out)
+        if jumped is not None:
+            i = jumped
+            continue
+
+        # 3c) 드러냄표 ⠶(7) … 7 — 종성 ㅇ으로 붙지 못한 위치
         if n == "7":
+            # 여분의 7 + 7=…7 (압축·전위된 드러냄) → 한 칸 건너뛰기
+            if (
+                not emph_open
+                and _peek(chars, i + 1) == "7"
+                and _match_emph_on_jamo(chars, i + 1) is not None
+            ):
+                i += 1
+                continue
             if emph_open:
                 out.append("’")
                 emph_open = False
