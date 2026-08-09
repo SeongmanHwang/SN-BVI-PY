@@ -211,6 +211,68 @@ def _is_separator_line(text: str) -> bool:
     return False
 
 
+# 본문과 한 줄에 섞인 구분선 탐지용 — 드러냄(7)은 본문에 흔해 제외
+_MIXED_SEP_STRUCTURAL = frozenset("3-=.*!0j4'gG")
+
+
+def _partition_mixed_separator_line(text: str) -> list[str] | None:
+    """구분선처럼 보이는 구간과 본문이 한 줄에 있으면 조각으로 나눈다.
+
+    전체가 구분선이거나 나눌 구간이 없으면 None.
+    """
+    if not text or _is_separator_line(text):
+        return None
+
+    from collections import Counter
+
+    n = len(text)
+    sep_spans: list[tuple[int, int]] = []
+    i = 0
+    while i < n:
+        ch = text[i]
+        nch = _norm_cell(ch) if ch.strip() else ch
+        if ch == " " or nch not in _MIXED_SEP_STRUCTURAL:
+            i += 1
+            continue
+        j = i
+        while j < n:
+            cj = text[j]
+            nj = _norm_cell(cj) if cj.strip() else cj
+            if cj == " " or nj in _MIXED_SEP_STRUCTURAL:
+                j += 1
+            else:
+                break
+        while j > i and text[j - 1] == " ":
+            j -= 1
+        chunk = text[i:j]
+        body = chunk.replace(" ", "")
+        if len(body) >= 8 and set(body) <= _MIXED_SEP_STRUCTURAL:
+            _most, cnt = Counter(body).most_common(1)[0]
+            if cnt / len(body) >= 0.65 and _is_separator_line(chunk):
+                sep_spans.append((i, j))
+        i = max(j, i + 1)
+
+    if not sep_spans:
+        return None
+
+    parts: list[str] = []
+    cursor = 0
+    for a, b in sep_spans:
+        if a > cursor:
+            left = text[cursor:a]
+            if left.strip():
+                parts.append(left)
+        parts.append(text[a:b])
+        cursor = b
+    if cursor < n:
+        right = text[cursor:]
+        if right.strip():
+            parts.append(right)
+    if len(parts) < 2:
+        return None
+    return parts
+
+
 def _separator_ink(text: str) -> str:
     """구분선은 묵자에서 가로줄로 정규화."""
     return "─" * 16
@@ -959,6 +1021,11 @@ def reverse_translate_line(raw_ascii: str) -> str:
         return bracket_rule
     if _is_separator_line(text):
         return _separator_ink(text)
+
+    # 구분선+본문이 한 줄에 붙어 있으면 줄 나눔 후 각각 역점역
+    mixed = _partition_mixed_separator_line(text)
+    if mixed is not None:
+        return "\n".join(reverse_translate_line(part) for part in mixed)
 
     chars = list(text)
     i = 0

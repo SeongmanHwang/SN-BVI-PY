@@ -43,6 +43,18 @@ def test_separator_preserved():
     assert "옹" not in reverse_translate_line(line7)
 
 
+def test_separator_mixed_with_body_splits_line():
+    """구분선처럼 보이는 구간+본문이 한 줄이면 줄 나눔 후 각각 복원."""
+    sep = "!" + ("3" * 20) + "4"
+    body = "7=a7e+hs"
+    out = reverse_translate_line(sep + body)
+    lines = out.split("\n")
+    assert len(lines) == 2
+    assert lines[0] == "─" * 16
+    assert lines[1] == "‘ㄱ’묘터"
+    assert "을" not in out
+
+
 def test_numbers_and_latin():
     assert reverse_translate_line("#aj") == "10"
     assert reverse_translate_line("0abc") == "abc"
