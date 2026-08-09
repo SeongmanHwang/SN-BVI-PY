@@ -72,6 +72,36 @@ def _indent_for(node_type: str | None, profile: LayoutProfile) -> int:
     return 0
 
 
+def _flatten_soft_newlines(
+    text: str, roman_mask: list[bool] | None
+) -> tuple[str, list[bool] | None]:
+    """문단 내부 개행(PDF 시각 줄)을 공백으로 접어 하드 줄바꿈을 없앤다.
+
+    문단 경계는 시퀀스/노드 분리로만 두고, 여기서는 셀 폭 줄바꿈만 남긴다.
+    """
+    if not text:
+        return text, roman_mask
+    normalized = text.replace("\r\n", "\n").replace("\r", "\n")
+    if "\n" not in normalized:
+        return text, roman_mask
+    if roman_mask is not None and len(roman_mask) != len(normalized):
+        roman_mask = None
+
+    out: list[str] = []
+    out_mask: list[bool] = []
+    for i, ch in enumerate(normalized):
+        if ch == "\n":
+            out.append(" ")
+            if roman_mask is not None:
+                out_mask.append(False)
+        else:
+            out.append(ch)
+            if roman_mask is not None:
+                out_mask.append(roman_mask[i])
+    flat = "".join(out)
+    return flat, (out_mask if roman_mask is not None else None)
+
+
 def _wrap_ascii(
     text: str,
     width: int,
@@ -82,6 +112,9 @@ def _wrap_ascii(
 ) -> list[str]:
     """ASCII 셀 단위 줄바꿈. 첫 줄만 first_indent, 이어서 cont_indent.
 
+    문단 안 개행은 하드 줄바꿈으로 쓰지 않고 공백으로 접은 뒤,
+    ``cells_per_line`` 폭 초과 시에만 나눈다.
+
     ``roman_mask[i]`` 가 True 인 위치에서 새 줄이 시작되는데 로마자표(0)가
     없으면 앞에 ``0`` 을 넣는다. (영어 구간만 마스크됨 — 한글 된소리 제외)
     """
@@ -89,55 +122,47 @@ def _wrap_ascii(
         width = 1
     first_indent = max(0, min(first_indent, width - 1))
     cont_indent = max(0, min(cont_indent, width - 1))
+    text, roman_mask = _flatten_soft_newlines(text, roman_mask)
     if roman_mask is not None and len(roman_mask) != len(text):
         roman_mask = None
 
+    if not text:
+        return [""]
+
     lines: list[str] = []
-    abs_pos = 0
-    raw_lines = text.splitlines() or [""]
-    for li, raw in enumerate(raw_lines):
-        if li:
-            abs_pos += 1  # newline
-        if not raw:
-            lines.append("")
-            continue
-        line_mask = (
-            roman_mask[abs_pos : abs_pos + len(raw)] if roman_mask is not None else None
+    i = 0
+    n = len(text)
+    line_no = 0
+    while i < n:
+        indent = first_indent if line_no == 0 else cont_indent
+        pad = " " * indent
+        usable = width - indent
+        need_roman = bool(
+            roman_mask is not None
+            and i < n
+            and roman_mask[i]
+            and not text[i:].startswith(ROMAN_SIGN)
         )
-        i = 0
-        n = len(raw)
-        line_no = 0
-        while i < n:
-            indent = first_indent if line_no == 0 else cont_indent
-            pad = " " * indent
-            usable = width - indent
-            need_roman = bool(
-                line_mask is not None
-                and i < n
-                and line_mask[i]
-                and not raw[i:].startswith(ROMAN_SIGN)
-            )
-            if need_roman:
-                usable = max(1, usable - len(ROMAN_SIGN))
-            rest = n - i
-            if rest <= usable:
-                piece = raw[i:n]
-                i = n
+        if need_roman:
+            usable = max(1, usable - len(ROMAN_SIGN))
+        rest = n - i
+        if rest <= usable:
+            piece = text[i:n]
+            i = n
+        else:
+            cut = _move_cut_before_nonbreaking(text, i, i + usable)
+            chunk = text[i:cut]
+            sp = chunk.rfind(" ")
+            if sp > 0:
+                piece = chunk[:sp]
+                i = i + sp + 1
             else:
-                cut = _move_cut_before_nonbreaking(raw, i, i + usable)
-                chunk = raw[i:cut]
-                sp = chunk.rfind(" ")
-                if sp > 0:
-                    piece = chunk[:sp]
-                    i = i + sp + 1
-                else:
-                    piece = chunk
-                    i = cut
-            if need_roman:
-                piece = ROMAN_SIGN + piece
-            lines.append(pad + piece)
-            line_no += 1
-        abs_pos += len(raw)
+                piece = chunk
+                i = cut
+        if need_roman:
+            piece = ROMAN_SIGN + piece
+        lines.append(pad + piece)
+        line_no += 1
     return lines
 
 

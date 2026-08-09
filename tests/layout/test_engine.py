@@ -117,6 +117,23 @@ def test_wrap_keeps_arrow_pronunciation_cells_together():
     assert reversed_text == "‘ㄱ’묘터→‘ㄴ’백파강→‘ㄷ’언덕"
 
 
+def test_wrap_flattens_soft_newlines_within_paragraph():
+    """문단 안 개행은 하드 줄바꿈이 아니라 공백으로 접고, 들여쓰기는 첫 줄만."""
+    from korean_exam_braille.app.layout.engine import _wrap_ascii
+
+    # 각 PDF 시각 줄은 짧아서, 예전 splitlines면 3줄·각 줄 first_indent
+    text = "one\ntwo\nthree"
+    lines = _wrap_ascii(text, 32, first_indent=2, cont_indent=0)
+    assert len(lines) == 1
+    assert lines[0] == "  one two three"
+
+    # 폭이 좁으면 셀 단위로만 이어 나누고, 이어지는 줄은 cont_indent(0)
+    wrapped = _wrap_ascii(text, 10, first_indent=2, cont_indent=0)
+    assert wrapped[0].startswith("  ")
+    assert all(not ln.startswith("  ") for ln in wrapped[1:])
+    assert " ".join(ln.strip() for ln in wrapped) == "one two three"
+
+
 def test_wrap_and_choice_indent():
     engine = RuleBrailleLayoutEngine()
     profile = LayoutProfile(cells_per_line=10, choice_indent=2, lines_per_page=26)

@@ -19,6 +19,9 @@ _BLOCK_START = re.compile(
     r")"
 )
 
+# 들여쓰기/내어쓰기 문단 첫줄·본문 여백 차이 임계값 (pt)
+_INDENT_X_TOL = 8.0
+
 
 def _union_bbox(boxes: list[BBox]) -> BBox:
     return (
@@ -99,8 +102,11 @@ def build_blocks(
     for col in sorted(by_col):
         ordered = by_col[col]
         current: list[PdfLine] = [ordered[0]]
+        first_x = ordered[0].bbox[0]
+        body_x: float | None = None
         for prev, line in zip(ordered, ordered[1:]):
             gap = line.bbox[1] - prev.bbox[3]
+            x = line.bbox[0]
             new_block = False
             if col in (-2, 2):
                 new_block = gap > median_h * 0.35 or _starts_new_block(line.text)
@@ -108,19 +114,26 @@ def build_blocks(
                 new_block = True
             elif gap > max_gap:
                 new_block = True
-            elif line.bbox[0] + 8 < prev.bbox[0] and gap > median_h * 0.25:
-                if _starts_new_block(line.text) or gap > median_h * 0.5:
-                    new_block = True
+            elif body_x is not None and abs(x - body_x) > _INDENT_X_TOL:
+                # 들여쓰기/내어쓰기: 본문 여백과 다르면 새 문단
+                new_block = True
 
             if new_block:
                 groups.append(current)
                 current = [line]
+                first_x = x
+                body_x = None
             elif prev.bracket_label != line.bracket_label:
                 # [A]~[E] 소속 전환 — 점역 ┌──── 표지가 앞 서술까지 감싸지 않도록
                 groups.append(current)
                 current = [line]
+                first_x = x
+                body_x = None
             else:
                 current.append(line)
+                if body_x is None and abs(x - first_x) > _INDENT_X_TOL:
+                    # 같은 문단 내 첫줄 → 본문 여백 확정
+                    body_x = x
         groups.append(current)
 
     blocks: list[PdfBlock] = []
