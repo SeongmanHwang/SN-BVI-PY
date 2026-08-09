@@ -113,6 +113,7 @@
 - **빗금 `/`**: `_/` (단독 `/`는 ㅖ·ㅆ과 충돌).
 - **표선**: 묵자 `────` 행 → `!333…4` 등; 역점역은 가로줄로 정규화.
 - **그림 자리**: `[그림]` → 고정 점역 셀열 (`FIGURE_*`).
+- **줄거리 끝**: PDF에 `[중략 … 줄거리]` 등 표지가 있고 이어지는 돋움·작은 글씨 런이 끝나면 `[줄거리 끝]` 행 삽입 → 고정 ASCII (`PLOT_SUMMARY_END_*`). 시작 표지는 원문 유지.
 
 ---
 
@@ -149,6 +150,7 @@
 7. remove_detected_label_text      # 여백에 찍힌 [A] 표지만 삭제
 8. (빈 span 제거)
 9. build_lines                     # 단·줄 + <u> 삽입
+9b. annotate_plot_summary_lines    # [중략…줄거리] 런 끝 → [줄거리 끝]
 10. linearize_page_graphics
       · merge_circled_label_lines   # 원문자 전용 행 병합
       · promote_tables_into_lines  # 표 → 행 텍스트
@@ -172,6 +174,7 @@
 | **밑줄** | `emphasis.mark_underlined_spans` | 짧은 가로 `l` 획만 후보. 긴 가로선·닫힌 박스 상하변 제외. `char_bboxes`면 글자 단위 `<u>`, 없으면 span 전체. 표 안 밑줄 클리어. |
 | **지문 꺾쇠** | `bracket_groups` | 세로축+짧은 턱+라벨로 `[A]`–`[E]` 기하 검출. **오른쪽 여백**(왼쪽 턱)과 **왼쪽 여백**(오른쪽 턱) 모두. 여백 인쇄 표지만 텍스트에서 제거(본문 `[A]의…`는 유지). 라인/블록에 `bracket_label`·태그. |
 | **줄 구성** | `line_builder.build_lines` | 열별 y 근접·x 간격으로 줄. 밑줄 범위를 `<u>…</u>`로 직렬화. |
+| **중략 줄거리** | `plot_summary.annotate_plot_summary_lines` | `[중략…줄거리]`/`줄거리]` 표지 행부터 **동일 글꼴 버킷·크기** 연속 런 끝에 `[줄거리 끝]` 삽입. 시작 표지는 원문만. |
 | **원문자 행** | `graphic_linearize.merge_circled_label_lines` | **라벨만** 있는 ⓐⓑ… 행을 한 줄로 합침. 본문 인라인 `ⓐ<u>…</u>`는 옮기지 않음. |
 | **박스 표선** | `boxes` + `insert_box_rule_lines` | 닫힌 큰 프레임에 `─`×16 규칙 줄 삽입(점역 표선). 짧은 빈칸 박스(`[가]`형, 높이 작음)는 표선 생략. |
 | **블록·후보 태그** | `block_builder`, `candidates` | `[N~M]`, `N.`, ①–⑤, 보기 등으로 블록 시작. Header/Footer/Question/Choice/… 후보 태그. |
@@ -188,7 +191,7 @@
 
 다운스트림: Exam 트리 → 점역(이 문서 A절) → 레이아웃 → BRF.
 
-테스트(대표): `tests/pdf/test_extractor.py`, `test_tables.py`, `test_display_and_emphasis.py`, `test_graphic_linearize.py`, `test_bracket_groups.py`, `test_boxes_vector.py`.
+테스트(대표): `tests/pdf/test_extractor.py`, `test_tables.py`, `test_display_and_emphasis.py`, `test_graphic_linearize.py`, `test_bracket_groups.py`, `test_boxes_vector.py`, `test_plot_summary.py`.
 
 ---
 

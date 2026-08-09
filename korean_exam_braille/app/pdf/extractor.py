@@ -34,6 +34,7 @@ from korean_exam_braille.app.pdf.tables import (
     clear_underlines_inside_tables,
     detect_vector_tables,
 )
+from korean_exam_braille.app.pdf.plot_summary import annotate_plot_summary_lines
 from korean_exam_braille.app.pdf.reading_order import assign_reading_order
 
 
@@ -124,6 +125,8 @@ def build_page_structure(
         page_width=float(rect.width),
         profile=profile,
     )
+    # [중략 … 줄거리] 표지 + 돋움·작은 글씨 런 끝에 [줄거리 끝]
+    lines = annotate_plot_summary_lines(lines, spans, page_number=page_number)
     # 노트형(글자 밀집) 래스터는 [그림] 처리에서 제외
     figures = filter_graphic_figures(figures, lines)
     # 흩어진 원문자 행 병합 + 표·그림 승격 + 박스 표선

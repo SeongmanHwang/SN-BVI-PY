@@ -37,6 +37,10 @@ from korean_exam_braille.app.common.korean_tables import (
 from korean_exam_braille.app.common.patterns import PASSAGE_RANGE
 from korean_exam_braille.app.exam.models import ExamDocument, ExamNode
 from korean_exam_braille.app.common.figure_markup import FIGURE_BRAILLE_ASCII, FIGURE_INK
+from korean_exam_braille.app.common.plot_summary_markup import (
+    PLOT_SUMMARY_END_BRAILLE_ASCII,
+    PLOT_SUMMARY_END_INK,
+)
 from korean_exam_braille.app.common.hanja_reading import replace_hanja_with_reading
 from korean_exam_braille.app.common.opaque_text import replace_opaque_with_slash
 
@@ -350,6 +354,7 @@ def hangul_text_to_ascii(text: str) -> str:
     ⓐ–ⓩ 는 드러냄+라틴(``7a7`` …)으로 점역한다 (참고 BRF ``70a7``/‘a’ 아님).
     박스 표선 행(``────`` 등)은 ``!333…4`` 표선으로 점역한다.
     그림 자리표시 ``[그림]`` 은 고정 점역(그림 생략)으로 바꾼다.
+    ``[줄거리 끝]`` 행도 고정 ASCII로 점역한다.
     """
     ascii_text, _mask = hangul_text_to_ascii_with_roman_mask(text)
     return ascii_text
@@ -373,6 +378,9 @@ def hangul_text_to_ascii_with_roman_mask(text: str) -> tuple[str, list[bool]]:
         if line.strip() == FIGURE_INK:
             ascii_parts.append(FIGURE_BRAILLE_ASCII)
             mask_parts.append([False] * len(FIGURE_BRAILLE_ASCII))
+        elif line.strip() == PLOT_SUMMARY_END_INK:
+            ascii_parts.append(PLOT_SUMMARY_END_BRAILLE_ASCII)
+            mask_parts.append([False] * len(PLOT_SUMMARY_END_BRAILLE_ASCII))
         elif _RULE_LINE.match(line):
             ascii_parts.append(_TABLE_RULE_ASCII)
             mask_parts.append([False] * len(_TABLE_RULE_ASCII))

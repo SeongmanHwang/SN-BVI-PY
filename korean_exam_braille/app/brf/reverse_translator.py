@@ -18,6 +18,10 @@ from korean_exam_braille.app.common.figure_markup import (
     FIGURE_BRAILLE_ASCII,
     FIGURE_INK,
 )
+from korean_exam_braille.app.common.plot_summary_markup import (
+    PLOT_SUMMARY_END_BRAILLE_ASCII,
+    PLOT_SUMMARY_END_INK,
+)
 from korean_exam_braille.app.common.korean_tables import (
     ABBREV_CV,
     ABBREV_GEOT,
@@ -884,6 +888,8 @@ def reverse_translate_line(raw_ascii: str) -> str:
     text = normalize_brf_ascii(raw_ascii)
     if text.strip() == FIGURE_BRAILLE_ASCII:
         return FIGURE_INK
+    if text.strip() == PLOT_SUMMARY_END_BRAILLE_ASCII:
+        return PLOT_SUMMARY_END_INK
     bracket_rule = _bracket_rule_ink(text)
     if bracket_rule is not None:
         return bracket_rule
