@@ -110,6 +110,7 @@ def build_page_structure(
     clear_underlines_inside_tables(spans, tables)
     # drawing과 원래 PDF 텍스트로 괄호를 먼저 찾은 뒤, 공백에 인쇄된
     # 물리적 [A]~[E]만 텍스트에서 제거한다. 의미는 아래 메타데이터로 보존.
+    # (오른쪽·왼쪽 여백 꺾쇠 모두 detect_bracket_geometries 가 인식)
     bracket_groups = detect_bracket_geometries(page)
     remove_detected_label_text(spans, bracket_groups)
     spans = [span for span in spans if span.text]

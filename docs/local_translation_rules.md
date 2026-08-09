@@ -1,0 +1,183 @@
+# 로컬 규칙 (점역 · PDF 추출)
+
+한국 점자 규정·참고 BRF·일반 PDF 추출을 따르되, **이 코드베이스만의 명시적 관례**를 여기에 모은다.  
+정합의 최종 척도는 **BRF ASCII 셀 비교**이다 (`architecture.md`).
+
+| 구분 | 주요 코드 |
+|------|-----------|
+| 점역·역점역 | `braille/translator.py`, `brf/reverse_translator.py`, `common/korean_tables.py`, `layout/engine.py` |
+| PDF 추출 | `pdf/extractor.py` 및 동 패키지 모듈 |
+
+역점역 처리 순서의 상세는 [reverse_translation.md](reverse_translation.md).
+
+---
+
+# A. 점역 로컬 규칙
+
+## 1. 종성 ↔ 문장부호 (같은 셀)
+
+| 충돌 | 셀 | 점역 (정방향) | 역점역 |
+|------|-----|---------------|--------|
+| 종성 **ㅍ** ↔ 마침표 `.` | `4` (⠲) | 어절 ≤2음절이면 `.` **앞 공백** (`가.` → `$ 4`) | 짧은 어절+붙임 `4`→ㅍ, 긴 어절(≥3)·공백 뒤→`.` |
+| 종성 **ㅌ** ↔ 물음표 `?` | `8` (⠦) | 어절 ≤2음절이면 `?` **앞 공백** (`가?` → `$ 8`, `같`→`$8`) | 짧은 어절+붙임 `8`+흔한 ㅌ받침/단독 어절→ㅌ, 긴 어절·그 외→`?` |
+| 종성 **ㅋ** ↔ 느낌표 `!` | `6` | (일반 문장부호) | 문장 끝 경계면 `!` |
+
+- ㅍ/마침표와 ㅌ/물음표는 **같은 어절 길이 상수**(≤2)를 공유한다.
+- ㅌ은 길이에 더해 화이트리스트(`같겉곁끝밑밭얕옅맡핥숱`)를 **보조**로 쓴다. 구관례(`_sz8` = `것은?`)도 이 경로로 복원될 수 있다.
+- 어절 **중간** 종성(다음 음절이 이어짐)은 구두점 구분에 넣지 않는다.
+
+테스트: `tests/brf/test_period_jong_pieup.py`, `tests/brf/test_reverse_jong_tieut_question.py`.
+
+---
+
+## 2. 로마자
+
+| 규칙 | 내용 | ASCII 예 |
+|------|------|----------|
+| 로마자표 | 라틴 구간 시작에 `0`(⠴) | `FOB` → `0,f,o,b` |
+| 대문자 | 글자마다 `,` + 소문자 | `,f` = F |
+| 종료표 | 로마 뒤 **비로마**(한글·구두 등)가 이어지면 `4`(⠲, 2-5-6). **문자열 끝만** 로마면 생략 | `LA항` → `,l,a4j7` |
+| 영문 내 공백 | 다음이 라틴이면 같은 로마 구간 유지 | `FOB LA…` |
+| 영문 쉼표 | `,` 뒤(공백 허용) 라틴이면 `1`로 유지 | `Cost, Insurance` |
+| 줄바꿈 | `roman_mask`로 영어 구간을 표시. 새 줄이 마스크 True인데 `0`이 없으면 **앞에 `0` 재삽입** | `Insurance` / `and Freight` 랩 |
+
+테스트: `tests/brf/test_reverse_roman_tense.py`, `tests/layout/test_engine.py`.
+
+---
+
+## 3. 가운뎃점·불릿 (셀 충돌 회피)
+
+| 묵자 | ASCII | 점형 | 비고 |
+|------|--------|------|------|
+| · / ㆍ | `"2` | ⠐⠆ (5 + 2-3) | **구관례 `1;`(ㄹ+ㅊ) 금지** — `일치`와 충돌 |
+| ∙ (항목) | `"4` + 뒤 공백 | ⠐⠲ | `,.`(쉼표+마침표)와 셀열 동일 → 최장 일치로 불릿 우선 |
+| =? | (구) 호환자모 자리 | · 로 복원 | 옹·억 약자로 읽지 않음 |
+
+점역 시 · 앞뒤 공백은 **한 칸**으로 정규화한다.
+
+---
+
+## 4. 원문자·숨김표
+
+### 선택지·기호
+
+| 묵자 | 점역 | 비고 |
+|------|------|------|
+| ①–⑤ | `7#a7`…`7#e7` | 수표 있는 드러냄 |
+| ⓐ–ⓩ | `7a7`…`7z7` | 드러냄+라틴 (`70a7`/`‘a’` 아님) |
+| ㉠–㉭ | `7=a7`… (온표 자모) | 드러냄+자음 |
+| ㉮–㉻ | `7$7`… (음절) | 드러냄+가·나·다… / `㉮`→`7$7` |
+| ⓒ | `7c7` | `나`(㉯)와 **동일 셀** — 역점역은 라틴 원문자 우선 |
+
+### 동그라미 숨김표 (규정 4-5-6 + (3-5-6)×개수 + 1-2-3)
+
+연속 `○`·`〇`·`◯` → `_` + `0`×n + `l`.
+
+| 묵자 | ASCII | 점자 |
+|------|--------|------|
+| ○ | `_0l` | ⠸⠴⠇ |
+| ○○ | `_00l` | ⠸⠴⠴⠇ |
+
+역점역에서 `_0…0l`은 선택지 표지 `_0`보다 **먼저** 매칭한다.
+
+---
+
+## 5. 강조·밑줄
+
+- 묵자 `<u>…</u>` → 점자 `,-` … `-'`.
+- PDF 밑줄 병합은 **같은 drawing segment**끼리만 이어 붙인다 (짧은 획끼리 `<u>水</u><u>乙</u>` 유지, 한 긴 획은 `<u>배제할</u>`).
+- 원문자+밑줄은 **인라인 유지**가 기본 (`ⓐ<u>…</u>`). 향찰용 2줄 분리 특례는 두지 않는다.
+
+---
+
+## 6. 기타 시험지 관례 (요약)
+
+- **숫자 뒤**: 한글·영문이 바로 이어지면 수표 종료용 공백. 대괄호 안 점수(`[3점]`) 등은 공백 생략 가능.
+- **지문 범위**: `[1~3]` → `82#a\`9#c;0` 관례.
+- **빗금 `/`**: `_/` (단독 `/`는 ㅖ·ㅆ과 충돌).
+- **표선**: 묵자 `────` 행 → `!333…4` 등; 역점역은 가로줄로 정규화.
+- **그림 자리**: `[그림]` → 고정 점역 셀열 (`FIGURE_*`).
+
+---
+
+## 7. 의도적으로 구분하는 셀
+
+헷갈리기 쉬운 **다른** 셀 (이 프로그램에서 혼동하면 안 되는 것):
+
+| ASCII | 용도 |
+|-------|------|
+| `?` (⠹) | **억** 약자 — 물음표(`8`)와 다름 |
+| `0` (⠴) | 로마자표 · 종성 ㅎ · 숨김표 단위 · 닫는따옴표 접두 |
+| `4` (⠲) | 마침표 · 종성 ㅍ · **로마자종료표** · (숨김과 무관) |
+| `8` (⠦) | 물음표 · 종성 ㅌ · (여는 `(` 은 `8'`) |
+| `l` (⠇) | 사 약자 · 숨김표 닫음 · 선택지 `_0`의 앞 셀 |
+
+---
+
+# B. PDF 추출 방법
+
+범용 PDF 텍스트 덤프가 아니라, **좌표·벡터 도면·수능 국어 판형**을 합쳐 `PdfDocumentStructure` 하나를 만든다.  
+진입점: `DefaultPdfStructureExtractor` → `extract_pdf` → 페이지마다 `build_page_structure` (`pdf/extractor.py`).
+
+문서 전체에서 먼저 `infer_layout_profile`으로 머리말/꼬리말 밴드·2단 `column_cut_x`를 추정한 뒤, 각 페이지에 공통으로 쓴다 (`pdf/layout_profile.py`).
+
+## B1. 페이지 처리 순서
+
+```text
+1. extract_page_spans              # PyMuPDF rawdict 텍스트
+2. detect_vector_tables            # drawings → 격자 표
+3. detect_raster_figures           # 임베디드 이미지
+4. mark_underlined_spans           # 짧은 가로선 ∩ 글자
+5. clear_underlines_inside_tables  # 표 격자 오검출 제거
+6. detect_bracket_geometries       # 지문 [A]~[E] 꺾쇠
+7. remove_detected_label_text      # 여백에 찍힌 [A] 표지만 삭제
+8. (빈 span 제거)
+9. build_lines                     # 단·줄 + <u> 삽입
+10. linearize_page_graphics
+      · merge_circled_label_lines   # 원문자 전용 행 병합
+      · promote_tables_into_lines  # 표 → 행 텍스트
+      · promote_figures_into_lines # [그림] 자리표시
+      · insert_box_rule_lines      # 큰 박스에 ─ 표선
+11. assign_lines_to_brackets
+12. build_blocks                   # 문항·선택지 등 블록
+13. assign_reading_order           # header→본문좌우→footer
+14. detect_block_candidates + TableAsset/FigureAsset
+15. annotate_blocks_with_brackets
+```
+
+## B2. 방법별 요지
+
+| 방법 | 모듈 | 무엇을 하는가 |
+|------|------|----------------|
+| **텍스트 span** | `extractor.extract_page_spans` | `get_text("rawdict")` + 공백 보존. `PdfSpan`(bbox·font·bold·`char_bboxes`). 불투명 글리프는 `/`로 치환 (`opaque_text`). |
+| **판형 프로파일** | `layout_profile` | 머리/꼬리 밴드, 2단 거터. 단순 PDF 스트림 순서 대신 열 할당. |
+| **벡터 표** | `tables.detect_vector_tables` | `get_drawings()`의 사각형·선으로 격자 복원. 셀 중심 span으로 텍스트. 이후 행 문자열로 **승격**. |
+| **래스터 그림** | `figures.detect_raster_figures` | `get_image_info`. OCR 없음. 줄에 `[그림]`(`FIGURE_INK`)만 삽입. |
+| **밑줄** | `emphasis.mark_underlined_spans` | 짧은 가로 `l` 획만 후보. 긴 가로선·닫힌 박스 상하변 제외. `char_bboxes`면 글자 단위 `<u>`, 없으면 span 전체. 표 안 밑줄 클리어. |
+| **지문 꺾쇠** | `bracket_groups` | 세로축+짧은 턱+라벨로 `[A]`–`[E]` 기하 검출. **오른쪽 여백**(왼쪽 턱)과 **왼쪽 여백**(오른쪽 턱) 모두. 여백 인쇄 표지만 텍스트에서 제거(본문 `[A]의…`는 유지). 라인/블록에 `bracket_label`·태그. |
+| **줄 구성** | `line_builder.build_lines` | 열별 y 근접·x 간격으로 줄. 밑줄 범위를 `<u>…</u>`로 직렬화. |
+| **원문자 행** | `graphic_linearize.merge_circled_label_lines` | **라벨만** 있는 ⓐⓑ… 행을 한 줄로 합침. 본문 인라인 `ⓐ<u>…</u>`는 옮기지 않음. |
+| **박스 표선** | `boxes` + `insert_box_rule_lines` | 닫힌 큰 프레임에 `─`×16 규칙 줄 삽입(점역 표선). 짧은 빈칸 박스(`[가]`형, 높이 작음)는 표선 생략. |
+| **블록·후보 태그** | `block_builder`, `candidates` | `[N~M]`, `N.`, ①–⑤, 보기 등으로 블록 시작. Header/Footer/Question/Choice/… 후보 태그. |
+| **읽기 순서** | `reading_order` | header → full → left → right → footer. |
+
+## B3. 일반 추출기와 다른 점 (요지)
+
+- PDF 문자 스트림 순서가 아니라 **2단·머리/꼬리 밴드** 기준 재배치.
+- 밑줄은 폰트 플래그가 아니라 **벡터 짧은 가로선** 교차.
+- 표·큰 박스는 도면에서 복원해 **점역용 행/표선**으로 승격.
+- 그림은 내용 OCR 없이 **자리표시만**.
+- 수능형 여백 `[A]` 꺾쇠는 기하로 잡고, 본문 참조 텍스트와 구분.
+- 원문자는 “라벨 전용 행”만 병합하고 본문 인라인은 유지.
+
+다운스트림: Exam 트리 → 점역(이 문서 A절) → 레이아웃 → BRF.
+
+테스트(대표): `tests/pdf/test_extractor.py`, `test_tables.py`, `test_display_and_emphasis.py`, `test_graphic_linearize.py`, `test_bracket_groups.py`, `test_boxes_vector.py`.
+
+---
+
+## 변경 시
+
+- **점역 규칙**: 정·역 양쪽과 A절 해당 행·테스트를 함께 고친다.
+- **PDF 추출**: `build_page_structure` 순서·위 표·관련 `tests/pdf`를 함께 맞춘다.
+- 새 로컬 규칙은 이 문서에 한 줄이라도 남긴다.

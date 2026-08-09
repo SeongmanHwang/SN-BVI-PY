@@ -1,15 +1,16 @@
-"""오른쪽 여백 [A]~[E] 꺾인 괄호(drawing) → 소속 행 구간 복원.
+"""여백 [A]~[E] 꺾인 괄호(drawing) → 소속 행 구간 복원.
 
 수능 문제지에서 구간 표지는 보통 이렇게 들어 있다::
 
-    본문 행들 …        ┐
-                       │
-                       │  [A]   ← 세로선 사이 ~14pt 공백
-                       │
-                       ┘
+    본문 행들 …        ┐          또는          ┌   … 본문 행들
+                       │                       │
+                       │  [A]                  │  [A]
+                       │                       │
+                       ┘                       └
 
 가로·세로선은 각각 독립 ``line`` drawing 이고, OCR 없이 ``get_drawings()``
-와 ``[A]`` 텍스트 좌표만으로 복원할 수 있다.
+와 ``[A]`` 텍스트 좌표만으로 복원할 수 있다. 오른쪽 여백(왼쪽 방향 턱)과
+왼쪽 여백(오른쪽 방향 턱)을 모두 인식한다.
 """
 
 from __future__ import annotations
@@ -26,8 +27,10 @@ _LABEL_RE = re.compile(r"\[([A-E])\]")
 # 거의 수직/수평
 _MAX_AXIS_DX = 1.5
 _MAX_AXIS_DY = 1.5
-_MIN_VERT_LEN = 12.0
-# 왼쪽 턱(짧은 가로선) — 박스 긴 변과 구분
+# 실측 10면의 왼쪽 [A]는 위·아래 줄기가 각각 약 11.75pt이다.
+# 라벨+상하 턱을 모두 요구하므로 10pt까지 낮춰도 박스선 오검출은 제한된다.
+_MIN_VERT_LEN = 10.0
+# 짧은 가로 턱 — 박스 긴 변과 구분
 _MIN_TICK = 4.0
 _MAX_TICK = 28.0
 # 라벨이 끼는 세로선 공백
@@ -37,8 +40,9 @@ _X_GROUP_TOL = 2.5
 _JOIN_TOL = 2.5
 _LABEL_X_PAD = 30.0
 _LABEL_Y_PAD = 6.0
-# 본문 행은 괄호 줄기보다 왼쪽에서 시작
-_LINE_LEFT_OF_STEM = 8.0
+# 본문 행이 줄기 쪽으로 넘어가도 허용하는 여유
+_LINE_STEM_PAD = 8.0
+_LINE_OVERFLOW_PAD = 28.0
 
 
 @dataclass
@@ -51,8 +55,10 @@ class BracketGroup:
     y1: float
     gap_y0: float
     gap_y1: float
-    tick_x0: float
+    tick_x0: float  # 본문 쪽을 향한 턱 끝 x
     label_bbox: BBox
+    # 본문이 줄기 기준 어느쪽인지: "left"(오른쪽 여백 괄호) / "right"(왼쪽 여백)
+    body_side: str = "left"
     line_ids: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
@@ -65,6 +71,7 @@ class BracketGroup:
             "gap_y1": self.gap_y1,
             "tick_x0": self.tick_x0,
             "label_bbox": list(self.label_bbox),
+            "body_side": self.body_side,
             "line_ids": list(self.line_ids),
         }
 
@@ -80,6 +87,7 @@ class BracketGroup:
             gap_y1=float(data["gap_y1"]),
             tick_x0=float(data["tick_x0"]),
             label_bbox=(float(bb[0]), float(bb[1]), float(bb[2]), float(bb[3])),
+            body_side=str(data.get("body_side") or "left"),
             line_ids=list(data.get("line_ids") or []),
         )
 
@@ -87,7 +95,7 @@ class BracketGroup:
 def _collect_segments(
     page: Any,
 ) -> tuple[list[tuple[float, float, float]], list[tuple[float, float, float]]]:
-    """수직 (y0,y1,x), 짧은 왼쪽턱 후보 수평 (x0,x1,y)."""
+    """수직 (y0,y1,x), 짧은 턱 후보 수평 (x0,x1,y)."""
     verts: list[tuple[float, float, float]] = []
     ticks: list[tuple[float, float, float]] = []
     for drawing in page.get_drawings() or []:
@@ -133,13 +141,31 @@ def _has_left_tick(
     stem_x: float,
     y: float,
 ) -> tuple[float, float, float] | None:
-    """줄기 x·끝점 y에 붙은 왼쪽 짧은 가로선."""
+    """줄기 x·끝점 y에 붙은 왼쪽 짧은 가로선 (오른쪽 여백 괄호)."""
     for x0, x1, ty in ticks:
         if abs(ty - y) > _JOIN_TOL:
             continue
         if abs(x1 - stem_x) > _JOIN_TOL * 1.5:
             continue
         if x0 >= stem_x - 3.0:
+            continue
+        return (x0, x1, ty)
+    return None
+
+
+def _has_right_tick(
+    ticks: list[tuple[float, float, float]],
+    *,
+    stem_x: float,
+    y: float,
+) -> tuple[float, float, float] | None:
+    """줄기 x·끝점 y에 붙은 오른쪽 짧은 가로선 (왼쪽 여백 괄호)."""
+    for x0, x1, ty in ticks:
+        if abs(ty - y) > _JOIN_TOL:
+            continue
+        if abs(x0 - stem_x) > _JOIN_TOL * 1.5:
+            continue
+        if x1 <= stem_x + 3.0:
             continue
         return (x0, x1, ty)
     return None
@@ -212,10 +238,24 @@ def detect_bracket_geometries(page: Any) -> list[BracketGroup]:
                 if not (_MIN_GAP <= gap <= _MAX_GAP):
                     continue
                 stem_x = (upper[2] + lower[2]) / 2.0
-                top_tick = _has_left_tick(ticks, stem_x=stem_x, y=upper[0])
-                bot_tick = _has_left_tick(ticks, stem_x=stem_x, y=lower[1])
-                if top_tick is None or bot_tick is None:
+                top_left = _has_left_tick(ticks, stem_x=stem_x, y=upper[0])
+                bot_left = _has_left_tick(ticks, stem_x=stem_x, y=lower[1])
+                top_right = _has_right_tick(ticks, stem_x=stem_x, y=upper[0])
+                bot_right = _has_right_tick(ticks, stem_x=stem_x, y=lower[1])
+
+                body_side: str | None = None
+                tick_tip = 0.0
+                if top_left is not None and bot_left is not None:
+                    # 턱이 왼쪽 → 본문도 왼쪽 (오른쪽 여백 괄호)
+                    body_side = "left"
+                    tick_tip = min(top_left[0], bot_left[0])
+                elif top_right is not None and bot_right is not None:
+                    # 턱이 오른쪽 → 본문도 오른쪽 (왼쪽 여백 괄호)
+                    body_side = "right"
+                    tick_tip = max(top_right[1], bot_right[1])
+                else:
                     continue
+
                 hit = _label_in_gap(
                     labels,
                     stem_x=stem_x,
@@ -233,8 +273,9 @@ def detect_bracket_geometries(page: Any) -> list[BracketGroup]:
                         y1=lower[1],
                         gap_y0=upper[1],
                         gap_y1=lower[0],
-                        tick_x0=min(top_tick[0], bot_tick[0]),
+                        tick_x0=tick_tip,
                         label_bbox=lbb,
+                        body_side=body_side,
                     )
                 )
     # 겹치는 후보가 있으면 더 짧은(정확한) 쪽 우선
@@ -327,11 +368,10 @@ def assign_lines_to_brackets(
     lines: list[PdfLine],
     groups: list[BracketGroup],
 ) -> list[BracketGroup]:
-    """y 범위·왼쪽 열 조건으로 행을 괄호에 소속시키고 line.bracket_label 설정."""
+    """y 범위·줄기 좌/우 본문 조건으로 행을 괄호에 소속시키고 line.bracket_label 설정."""
     if not lines or not groups:
         return groups
 
-    # 한 행이 여러 괄호에 걸리면 줄기 x가 더 가까운(같은 열) 쪽
     for ln in lines:
         ln.bracket_label = None
 
@@ -344,13 +384,20 @@ def assign_lines_to_brackets(
         for g in groups:
             if ln.bbox[3] <= g.y0 or ln.bbox[1] >= g.y1:
                 continue
-            # 본문은 줄기보다 왼쪽에서 시작 (줄 끝 [A] 부착으로 오른쪽이 넘칠 수 있음)
-            if ln.bbox[0] >= g.stem_x - _LINE_LEFT_OF_STEM:
-                continue
-            # 줄 오른쪽 끝과 줄기 사이 거리가 가장 가까운 괄호(같은 열)
-            dist = g.stem_x - ln.bbox[2]
-            if dist < -28.0:
-                continue
+            if g.body_side == "right":
+                # 왼쪽 여백 괄호: 본문은 줄기보다 오른쪽에서 끝남
+                if ln.bbox[2] <= g.stem_x + _LINE_STEM_PAD:
+                    continue
+                dist = ln.bbox[0] - g.stem_x
+                if dist < -_LINE_OVERFLOW_PAD:
+                    continue
+            else:
+                # 오른쪽 여백 괄호: 본문은 줄기보다 왼쪽에서 시작
+                if ln.bbox[0] >= g.stem_x - _LINE_STEM_PAD:
+                    continue
+                dist = g.stem_x - ln.bbox[2]
+                if dist < -_LINE_OVERFLOW_PAD:
+                    continue
             score = abs(dist)
             if score < best_score:
                 best_score = score
@@ -361,7 +408,6 @@ def assign_lines_to_brackets(
         best.line_ids.append(ln.id)
 
     for g in groups:
-        # 읽기 순 유지
         order = {ln.id: i for i, ln in enumerate(lines)}
         g.line_ids.sort(key=lambda lid: order.get(lid, 10**9))
     return groups

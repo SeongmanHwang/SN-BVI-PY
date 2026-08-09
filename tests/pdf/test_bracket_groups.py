@@ -1,4 +1,4 @@
-"""오른쪽 여백 [A]/[B] 꺾인 괄호 감지."""
+"""여백 [A]/[B] 꺾인 괄호 감지 (왼쪽·오른쪽)."""
 
 from __future__ import annotations
 
@@ -29,12 +29,21 @@ def _draw_bracket(
     gap_y1: float,
     y1: float,
     tick: float = 10.0,
+    body_side: str = "left",
 ) -> None:
-    """위·아래 세로선 + 왼쪽 턱 (가운데 끊김)."""
-    page.draw_line(fitz.Point(stem_x - tick, y0), fitz.Point(stem_x, y0), width=0.8)
+    """위·아래 세로선 + 본문 쪽 턱 (가운데 끊김).
+
+    body_side=\"left\": 턱이 왼쪽(오른쪽 여백 괄호).
+    body_side=\"right\": 턱이 오른쪽(왼쪽 여백 괄호).
+    """
+    if body_side == "right":
+        tip = stem_x + tick
+    else:
+        tip = stem_x - tick
+    page.draw_line(fitz.Point(tip, y0), fitz.Point(stem_x, y0), width=0.8)
     page.draw_line(fitz.Point(stem_x, y0), fitz.Point(stem_x, gap_y0), width=0.8)
     page.draw_line(fitz.Point(stem_x, gap_y1), fitz.Point(stem_x, y1), width=0.8)
-    page.draw_line(fitz.Point(stem_x - tick, y1), fitz.Point(stem_x, y1), width=0.8)
+    page.draw_line(fitz.Point(tip, y1), fitz.Point(stem_x, y1), width=0.8)
 
 
 def test_synthetic_bracket_assigns_lines(tmp_path: Path):
@@ -66,6 +75,7 @@ def test_synthetic_bracket_assigns_lines(tmp_path: Path):
     labels = {g.label for g in page_struct.bracket_groups}
     assert "[A]" in labels
     group_a = next(g for g in page_struct.bracket_groups if g.label == "[A]")
+    assert group_a.body_side == "left"
     assert group_a.line_ids
     owned = [ln for ln in page_struct.lines if ln.bracket_label == "[A]"]
     texts = " ".join(ln.text for ln in owned)
@@ -85,6 +95,52 @@ def test_synthetic_bracket_assigns_lines(tmp_path: Path):
     displayed = format_page_text_for_display(page_struct)
     assert "[A] 학생1" in displayed
     assert "[A] 학생3" in displayed
+
+
+def test_synthetic_left_margin_bracket_assigns_lines(tmp_path: Path):
+    """왼쪽 여백 괄호(오른쪽으로 뻗은 턱)도 본문 행에 소속시킨다."""
+    fontfile = Path(r"C:\Windows\Fonts\malgun.ttf")
+    if not fontfile.exists():
+        fontfile = Path(r"C:\Windows\Fonts\arial.ttf")
+
+    path = tmp_path / "bracket_left.pdf"
+    doc = fitz.open()
+    page = doc.new_page(width=500, height=500)
+    page.insert_font(fontname="f0", fontfile=str(fontfile))
+
+    stem_x = 80.0
+    y0, gap_y0, gap_y1, y1 = 100.0, 160.0, 175.0, 240.0
+    _draw_bracket(
+        page,
+        stem_x=stem_x,
+        y0=y0,
+        gap_y0=gap_y0,
+        gap_y1=gap_y1,
+        y1=y1,
+        body_side="right",
+    )
+    page.insert_text((stem_x + 2, (gap_y0 + gap_y1) / 2 + 4), "[A]", fontsize=11, fontname="f0")
+    page.insert_text((120, 120), "학생1 : 양이 많긴 하지만", fontsize=12, fontname="f0")
+    page.insert_text((120, 150), "학생2 : 조사해 보니", fontsize=12, fontname="f0")
+    page.insert_text((120, 200), "학생3 : 환경에 부담까지", fontsize=12, fontname="f0")
+    page.insert_text((120, 300), "바깥 행입니다", fontsize=12, fontname="f0")
+
+    doc.save(path)
+    doc.close()
+
+    extracted = extract_pdf(path, page_numbers=[1])
+    page_struct = extracted.pages[0]
+    assert any(g.label == "[A]" for g in page_struct.bracket_groups)
+    group_a = next(g for g in page_struct.bracket_groups if g.label == "[A]")
+    assert group_a.body_side == "right"
+    assert group_a.tick_x0 > group_a.stem_x
+    owned = [ln for ln in page_struct.lines if ln.bracket_label == "[A]"]
+    texts = " ".join(ln.text for ln in owned)
+    assert "학생1" in texts
+    assert "학생3" in texts
+    assert "바깥 행" not in texts
+    displayed = format_page_text_for_display(page_struct)
+    assert "[A] 학생1" in displayed
 
 
 def test_long_box_edge_not_bracket(tmp_path: Path):
@@ -141,6 +197,28 @@ def test_exam_page2_bracket_a_and_b():
     assert len(page.bracket_groups) == 2
 
 
+@pytest.mark.skipif(not EXAM_PDF.exists(), reason="exam PDF not found")
+def test_exam_page10_left_margin_bracket_a():
+    """10면 하단: 11.75pt 줄기+오른쪽 턱의 왼쪽 여백 [A]."""
+    extracted = extract_pdf(EXAM_PDF, page_numbers=[10])
+    page = extracted.pages[0]
+    group_a = next(g for g in page.bracket_groups if g.label == "[A]")
+
+    assert group_a.body_side == "right"
+    assert abs(group_a.stem_x - 101.889) < 1.0
+    assert group_a.tick_x0 > group_a.stem_x
+
+    owned = [ln for ln in page.lines if ln.bracket_label == "[A]"]
+    text = "\n".join(ln.text for ln in owned)
+    assert "교내 캠페인" in text
+    assert "멸종 위기 홍보" in text
+    assert "[A]" not in text
+
+    # 30번 문항의 본문 참조 [A]는 물리적 구간 표지가 아니므로 유지한다.
+    all_text = "\n".join(ln.text for ln in page.lines)
+    assert "바탕으로 [A]를 고쳐 쓴" in all_text
+
+
 def test_assign_prefers_nearer_stem():
     lines = [
         PdfLine("l0", "본문", (100, 100, 300, 115), [], 1, 0),
@@ -156,6 +234,7 @@ def test_assign_prefers_nearer_stem():
         gap_y1=115,
         tick_x0=490,
         label_bbox=(492, 106, 510, 118),
+        body_side="left",
     )
     near = BracketGroup(
         label="[B]",
@@ -166,6 +245,7 @@ def test_assign_prefers_nearer_stem():
         gap_y1=115,
         tick_x0=340,
         label_bbox=(342, 106, 360, 118),
+        body_side="left",
     )
     assign_lines_to_brackets(lines, [far, near])
     assert lines[0].bracket_label == "[B]"
