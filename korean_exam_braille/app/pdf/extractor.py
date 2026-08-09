@@ -119,7 +119,7 @@ def build_page_structure(
         page_width=float(rect.width),
         profile=profile,
     )
-    # 향찰: 밑줄 본문 행 / 원문자 행 분리·병합 + 표·그림 승격 + 박스 표선
+    # 흩어진 원문자 행 병합 + 표·그림 승격 + 박스 표선
     lines = linearize_page_graphics(page, lines, tables=tables, figures=figures)
     # 오른쪽 여백 [A]~[E] 꺾인 괄호 → 행 소속
     assign_lines_to_brackets(lines, bracket_groups)

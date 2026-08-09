@@ -12,8 +12,10 @@ from korean_exam_braille.app.common.opaque_text import (
 from korean_exam_braille.app.pdf.emphasis import (
     annotate_text_with_underline_ranges,
     bbox_has_underline,
+    char_underline_match,
     iter_horizontal_underline_segments,
     merge_underline_flags,
+    merge_underline_matches,
 )
 from korean_exam_braille.app.pdf.extractor import extract_pdf
 from korean_exam_braille.app.session import ConversionWorkspace
@@ -139,6 +141,36 @@ def test_merge_underline_flags_and_annotate():
         annotate_text_with_underline_ranges("abcdefgh", [(2, 5)])
         == "ab<u>cde</u>fgh"
     )
+
+
+def test_underline_matches_preserve_segment_boundaries():
+    assert merge_underline_matches([None, 17, 18, None, 19, 19]) == [
+        (1, 2),
+        (2, 3),
+        (4, 6),
+    ]
+    assert (
+        annotate_text_with_underline_ranges("水乙 飮多", [(0, 1), (1, 2), (3, 5)])
+        == "<u>水</u><u>乙</u> <u>飮多</u>"
+    )
+
+
+def test_char_underline_match_distinguishes_short_lines_and_keeps_long_line():
+    chars = [
+        (0.0, 0.0, 10.0, 10.0),
+        (11.0, 0.0, 21.0, 10.0),
+    ]
+    short_lines = [(0.0, 10.0, 11.0), (11.0, 21.0, 11.0)]
+    assert [char_underline_match(bb, short_lines) for bb in chars] == [0, 1]
+    assert merge_underline_matches(
+        [char_underline_match(bb, short_lines) for bb in chars]
+    ) == [(0, 1), (1, 2)]
+
+    long_line = [(0.0, 21.0, 11.0)]
+    assert [char_underline_match(bb, long_line) for bb in chars] == [0, 0]
+    assert merge_underline_matches(
+        [char_underline_match(bb, long_line) for bb in chars]
+    ) == [(0, 2)]
 
 
 def test_underline_not_in_span_flags():

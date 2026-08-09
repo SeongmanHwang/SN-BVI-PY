@@ -1,4 +1,4 @@
-"""보기 그래픽 직렬화: 향찰 2행(밑줄 / 원문자) + 박스 표선."""
+"""보기 그래픽 직렬화: 흩어진 원문자 행 병합 + 박스 표선."""
 
 from __future__ import annotations
 
@@ -8,49 +8,14 @@ import fitz
 
 from korean_exam_braille.app.braille.translator import hangul_text_to_ascii
 from korean_exam_braille.app.brf.reverse_translator import reverse_translate_line as rev
-from korean_exam_braille.app.pdf.boxes import iter_box_rects, line_mostly_in_box
+from korean_exam_braille.app.pdf.boxes import iter_box_rects
 from korean_exam_braille.app.pdf.extractor import extract_pdf
 from korean_exam_braille.app.pdf.graphic_linearize import (
     BOX_RULE_INK,
-    format_two_line_hyangchal,
     insert_box_rule_lines,
     merge_circled_label_lines,
-    split_stacked_hyangchal_lines,
 )
 from korean_exam_braille.app.pdf.models import PdfLine
-
-
-def test_two_line_hyangchal_format_and_braille():
-    ink = format_two_line_hyangchal(
-        "[향찰 표기] <u>오</u>은 <u>수</u><u>을</u> <u>음</u><u>다</u>",
-        ["ⓐ", "ⓑ", "ⓒ", "ⓓ", "ⓔ"],
-    )
-    lines = ink.splitlines()
-    assert lines[0].startswith("[향찰 표기]")
-    assert "<u>오</u>" in lines[0]
-    assert "ⓐ" not in lines[0]
-    assert lines[1] == "ⓐ ⓑ ⓒ ⓓ ⓔ"
-    brl = hangul_text_to_ascii(ink)
-    assert "7a7" in brl and "7e7" in brl
-    assert ",-" in brl
-    back_lines = rev(brl).splitlines()
-    assert "<u>" in back_lines[0]
-    assert "ⓐ" in back_lines[1]
-
-
-def test_split_mixed_underline_and_labels():
-    mixed = PdfLine(
-        "m0",
-        "[향찰 표기] ⓐ<u>오</u>은 ⓑ<u>수</u>",
-        (20, 40, 200, 55),
-        [],
-        1,
-        0,
-    )
-    out = split_stacked_hyangchal_lines([mixed])
-    assert len(out) == 2
-    assert "ⓐ" not in out[0].text and "<u>오</u>" in out[0].text
-    assert out[1].text == "ⓐ ⓑ"
 
 
 def test_merge_scattered_label_lines():
@@ -68,6 +33,33 @@ def test_merge_scattered_label_lines():
     assert len(out) == 2
 
 
+def test_inline_circled_with_underline_stays_put():
+    """본문에 이미 있는 ⓐ+밑줄은 분리·이동하지 않는다."""
+    mixed = PdfLine(
+        "m0",
+        "그 적용을 ⓐ<u>배제할</u> 수 있다.",
+        (20, 40, 200, 55),
+        [],
+        1,
+        0,
+    )
+    out = merge_circled_label_lines([mixed])
+    assert len(out) == 1
+    assert out[0].text == "그 적용을 ⓐ<u>배제할</u> 수 있다."
+
+
+def test_stacked_label_line_not_moved_onto_body():
+    """밑줄 본문 + 아래 원문자 행은 그대로 두 줄."""
+    lines = [
+        PdfLine("h", "[향찰 표기] <u>吾</u>隱 <u>水乙</u> <u>飮多</u>", (20, 40, 200, 54), [], 1, 0),
+        PdfLine("a", "ⓐ ⓑ ⓒ ⓓ ⓔ", (40, 55, 180, 68), [], 1, 1),
+    ]
+    out = merge_circled_label_lines(lines)
+    assert len(out) == 2
+    assert "<u>吾</u>" in out[0].text and "ⓐ" not in out[0].text
+    assert out[1].text == "ⓐ ⓑ ⓒ ⓓ ⓔ"
+
+
 def test_box_rule_line_braille_and_reverse():
     brl = hangul_text_to_ascii(BOX_RULE_INK)
     assert brl.startswith("!")
@@ -78,25 +70,23 @@ def test_box_rule_line_braille_and_reverse():
 def test_insert_box_rule_lines_around_content():
     lines = [
         PdfLine("l0", "outside", (10, 10, 50, 20), [], 1, 0),
-        PdfLine("l1", "inner-a", (30, 40, 90, 50), [], 1, 1),
-        PdfLine("l2", "inner-b", (30, 55, 90, 65), [], 1, 2),
-        PdfLine("l3", "after", (10, 100, 50, 110), [], 1, 3),
+        PdfLine("l1", "inside A", (40, 40, 120, 55), [], 1, 1),
+        PdfLine("l2", "inside B", (40, 60, 120, 75), [], 1, 2),
+        PdfLine("l3", "outside2", (10, 200, 50, 210), [], 1, 3),
     ]
-    box = (25, 35, 95, 70)
-    assert line_mostly_in_box(lines[1].bbox, box)
-    out = insert_box_rule_lines(lines, [box], page_number=1)
+    boxes = [(30, 35, 130, 80)]
+    out = insert_box_rule_lines(lines, boxes, page_number=1)
     texts = [ln.text for ln in out]
     assert BOX_RULE_INK in texts
-    i0 = texts.index("inner-a")
-    i1 = texts.index("inner-b")
+    i0 = texts.index("inside A")
+    i1 = texts.index("inside B")
     assert texts[i0 - 1] == BOX_RULE_INK
     assert texts[i1 + 1] == BOX_RULE_INK
 
 
-def test_small_blank_box_does_not_insert_structure_rules():
-    """[가] 빈 응답란 같은 낮은 박스는 제시문 표선으로 직렬화하지 않는다."""
+def test_insert_box_rule_skips_shallow_answer_slot():
     lines = [
-        PdfLine("l0", "학생3 : [가]", (140, 924, 390, 937), [], 1, 0),
+        PdfLine("l0", "학생3 : [가]", (90, 920, 200, 935), [], 1, 0),
         PdfLine("l1", "사회자: 네, 좋은 의견입니다.", (90, 942, 350, 955), [], 1, 1),
     ]
     small_box = (136.65, 923.84, 398.92, 938.11)
@@ -107,13 +97,13 @@ def test_small_blank_box_does_not_insert_structure_rules():
     ]
 
 
-def test_pdf_two_line_hyangchal_extract(tmp_path: Path):
-    """합성 PDF: 밑줄 본문 + 아래 원문자 → 두 줄 (합치지 않음)."""
+def test_pdf_stacked_labels_remain_separate(tmp_path: Path):
+    """합성 PDF: 밑줄 본문 + 아래 원문자 → 합치지 않고 두 줄 유지 가능."""
     fontfile = Path(r"C:\Windows\Fonts\malgun.ttf")
     if not fontfile.exists():
         fontfile = Path(r"C:\Windows\Fonts\arial.ttf")
 
-    path = tmp_path / "hyangchal_two_line.pdf"
+    path = tmp_path / "hyangchal_stacked.pdf"
     doc = fitz.open()
     page = doc.new_page(width=400, height=300)
     page.insert_font(fontname="f0", fontfile=str(fontfile))
@@ -141,18 +131,7 @@ def test_pdf_two_line_hyangchal_extract(tmp_path: Path):
     assert iter_box_rects(doc2[0]), "draw_rect should yield a box"
     doc2.close()
 
-    # 원문자가 밑줄과 같은 토큰으로 붙지 않음
-    for ln in page_struct.lines:
-        if "<u>" in (ln.text or "") and "ⓐ" in (ln.text or ""):
-            raise AssertionError(f"mixed stacked line: {ln.text!r}")
-
     joined = "\n".join(ln.text for ln in page_struct.lines)
     assert BOX_RULE_INK in joined or any("<u>" in (ln.text or "") for ln in page_struct.lines)
-    # 라벨 전용 행이 있거나, 최소한 원문자가 본문 밑줄과 분리
-    label_lines = [
-        ln for ln in page_struct.lines if ln.text and all(
-            c in "ⓐⓑⓒⓓⓔⓕⓖⓗⓘⓙⓚⓛⓜⓝⓞⓟⓠⓡⓢⓣⓤⓥⓦⓧⓨⓩ \t" for c in ln.text
-        )
-    ]
     if any("ⓐ" in (s.text or "") for s in page_struct.spans):
-        assert label_lines or "ⓐ" in joined
+        assert "ⓐ" in joined

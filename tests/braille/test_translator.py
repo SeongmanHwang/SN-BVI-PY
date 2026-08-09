@@ -200,7 +200,7 @@ def test_circled_hangul_and_underline_emphasis():
 
 
 def test_circled_latin_labeled_underline_still_roundtrips():
-    """인라인 ⓐ<u>…</u> 도 점역·역점역은 가능 (PDF 직렬화 기본은 2행)."""
+    """인라인 ⓐ<u>…</u> 점역·역점역 (PDF 직렬화 기본도 인라인)."""
     assert hangul_text_to_ascii("ⓐ<u>오</u>은") == "7a7,-u-'z"
     from korean_exam_braille.app.brf.reverse_translator import reverse_translate_line as r
 
@@ -208,18 +208,15 @@ def test_circled_latin_labeled_underline_still_roundtrips():
     assert "70a7" not in hangul_text_to_ascii("ⓐ<u>오</u>")
 
 
-def test_hyangchal_two_line_braille():
-    """향찰 기본 계약: 밑줄 행 + 원문자 행."""
-    src = "[향찰 표기] <u>오</u>은\nⓐ ⓑ"
+def test_hyangchal_inline_braille():
+    """향찰 기본 계약: 원문자를 밑줄 구간 앞에 인라인."""
+    src = "[향찰 표기] ⓐ<u>오</u>은 ⓑ<u>수</u>"
     brl = hangul_text_to_ascii(src)
-    assert "\n" in brl
     assert "7a7" in brl and "7b7" in brl
     from korean_exam_braille.app.brf.reverse_translator import reverse_translate_line as r
 
-    # 행 단위 역점역
-    back = "\n".join(r(line) for line in brl.split("\n"))
-    assert "<u>오</u>" in back
-    assert "ⓐ" in back and "ⓑ" in back
+    back = r(brl)
+    assert back == src
 
 
 def test_box_rule_ink_to_table_rule():

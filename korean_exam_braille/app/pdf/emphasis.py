@@ -8,6 +8,8 @@ from korean_exam_braille.app.pdf.models import BBox, PdfSpan
 from korean_exam_braille.app.pdf.boxes import iter_box_rects
 
 UnderlineRange = tuple[int, int]  # [start, end) 문자 오프셋
+UnderlineSegment = tuple[float, float, float]  # (x0, x1, y)
+UnderlineMatch = int | None  # segments 목록의 인덱스
 
 
 def iter_horizontal_underline_segments(
@@ -55,7 +57,7 @@ def iter_horizontal_underline_segments(
 
 def bbox_has_underline(
     bbox: BBox,
-    segments: list[tuple[float, float, float]],
+    segments: list[UnderlineSegment],
     *,
     y_pad_below: float = 4.0,
     min_x_overlap_ratio: float = 0.35,
@@ -77,7 +79,7 @@ def bbox_has_underline(
 
 def char_is_underlined(
     char_bbox: BBox,
-    segments: list[tuple[float, float, float]],
+    segments: list[UnderlineSegment],
     *,
     y_pad_below: float = 5.0,
     min_x_overlap_ratio: float = 0.35,
@@ -86,12 +88,43 @@ def char_is_underlined(
 
     부분 밑줄은 span 전체 비율이 아니라 글자 폭 기준으로 판정한다.
     """
-    return bbox_has_underline(
+    return char_underline_match(
         char_bbox,
         segments,
         y_pad_below=y_pad_below,
         min_x_overlap_ratio=min_x_overlap_ratio,
-    )
+    ) is not None
+
+
+def char_underline_match(
+    char_bbox: BBox,
+    segments: list[UnderlineSegment],
+    *,
+    y_pad_below: float = 5.0,
+    min_x_overlap_ratio: float = 0.35,
+) -> UnderlineMatch:
+    """한 글자와 가장 잘 겹치는 밑줄 선분의 인덱스를 반환한다.
+
+    인접한 두 글자가 각각 다른 짧은 선분과 겹치면 서로 다른 ID를
+    유지한다. 하나의 긴 선분이 여러 글자를 관통하면 같은 ID가 된다.
+    """
+    x0, y0, x1, y1 = char_bbox
+    width = max(x1 - x0, 1.0)
+    height = max(y1 - y0, 1.0)
+    y_lo = y0 + height * 0.45
+    y_hi = y1 + y_pad_below
+    best_id: UnderlineMatch = None
+    best_overlap = 0.0
+    for segment_id, (sx0, sx1, sy) in enumerate(segments):
+        if sy < y_lo or sy > y_hi:
+            continue
+        overlap = min(x1, sx1) - max(x0, sx0)
+        if overlap < width * min_x_overlap_ratio:
+            continue
+        if overlap > best_overlap:
+            best_id = segment_id
+            best_overlap = overlap
+    return best_id
 
 
 def merge_underline_flags(flags: list[bool]) -> list[UnderlineRange]:
@@ -105,6 +138,27 @@ def merge_underline_flags(flags: list[bool]) -> list[UnderlineRange]:
             continue
         j = i + 1
         while j < n and flags[j]:
+            j += 1
+        ranges.append((i, j))
+        i = j
+    return ranges
+
+
+def merge_underline_matches(matches: list[UnderlineMatch]) -> list[UnderlineRange]:
+    """글자별 밑줄 선분 ID → 같은 선분별 연속 구간.
+
+    ``[17, 18]``은 ``[(0, 1), (1, 2)]``로 분리하고,
+    ``[17, 17]``은 ``[(0, 2)]``로 병합한다.
+    """
+    ranges: list[UnderlineRange] = []
+    i = 0
+    while i < len(matches):
+        segment_id = matches[i]
+        if segment_id is None:
+            i += 1
+            continue
+        j = i + 1
+        while j < len(matches) and matches[j] == segment_id:
             j += 1
         ranges.append((i, j))
         i = j
@@ -144,8 +198,8 @@ def mark_underlined_spans(page: Any, spans: list[PdfSpan]) -> list[PdfSpan]:
         return spans
     for span in spans:
         if span.char_bboxes and len(span.char_bboxes) == len(span.text):
-            flags = [char_is_underlined(bb, segs) for bb in span.char_bboxes]
-            ranges = merge_underline_flags(flags)
+            matches = [char_underline_match(bb, segs) for bb in span.char_bboxes]
+            ranges = merge_underline_matches(matches)
             span.underline_ranges = ranges
             span.is_underline = bool(ranges)
         elif bbox_has_underline(span.bbox, segs):

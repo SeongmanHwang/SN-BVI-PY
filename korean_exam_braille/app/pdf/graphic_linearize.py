@@ -1,18 +1,13 @@
-"""보기 그래픽 → 선형 묵자: 박스 표선 + 향찰 2행 직렬화.
+"""보기 그래픽 → 선형 묵자: 박스 표선 + 흩어진 원문자 행 병합.
 
-입체(글자 아래 밑줄·더 아래 원문자)를 합치지 않고 두 줄로 편다::
-
-    [향찰 표기] <u>오</u>은 <u>수</u><u>을</u> <u>음</u><u>다</u>
-    ⓐ ⓑ ⓒ ⓓ ⓔ
-
-    박스 경계 → ──── 행 (점역 시 표선 !333…4)
-
+본문에 이미 있는 원문자(``그 적용을 ⓐ배제할 …``)는 그대로 둔다.
+밑줄 아래 별행 원문자도 위치를 옮기지 않는다 (본문 행 / 라벨 행 유지).
 원문자는 ``7a7``…(ⓐ…) 로 점역한다. 참고 BRF ``70a7``/‘a’ 는 쓰지 않는다.
+
+박스 경계 → ──── 행 (점역 시 표선 !333…4)
 """
 
 from __future__ import annotations
-
-import re
 
 from korean_exam_braille.app.pdf.boxes import iter_box_rects, line_mostly_in_box
 from korean_exam_braille.app.pdf.figures import promote_figures_into_lines
@@ -23,7 +18,6 @@ from korean_exam_braille.app.pdf.tables import (
 )
 
 _CIRCLED_LATIN = set("ⓐⓑⓒⓓⓔⓕⓖⓗⓘⓙⓚⓛⓜⓝⓞⓟⓠⓡⓢⓣⓤⓥⓦⓧⓨⓩ")
-_CIRCLED_RE = re.compile(r"[ⓐ-ⓩ]")
 
 BOX_RULE_INK = "─" * 16
 
@@ -50,71 +44,6 @@ def _is_label_only_line(text: str) -> bool:
     return bool(body) and all(ch in _CIRCLED_LATIN for ch in body)
 
 
-def _has_underline_markup(text: str) -> bool:
-    return "<u>" in (text or "")
-
-
-def _strip_circled_from_text(text: str) -> tuple[str, list[str]]:
-    """본문에서 원문자를 떼어 (남은 본문, 원문자 목록)."""
-    labels: list[str] = []
-    parts: list[str] = []
-    for ch in text or "":
-        if ch in _CIRCLED_LATIN:
-            labels.append(ch)
-        else:
-            parts.append(ch)
-    body = "".join(parts)
-    body = " ".join(body.split()) if body.strip() else body
-    return body, labels
-
-
-def format_two_line_hyangchal(hanja_line: str, labels: list[str] | str) -> str:
-    """향찰 2행 묵자 (검수·테스트용)."""
-    if isinstance(labels, str):
-        label_line = " ".join(_circled_chars(labels)) or labels.strip()
-    else:
-        label_line = " ".join(labels)
-    return f"{hanja_line.rstrip()}\n{label_line}".rstrip()
-
-
-def split_stacked_hyangchal_lines(lines: list[PdfLine]) -> list[PdfLine]:
-    """한 행에 밑줄 본문+원문자가 섞이면 본문 행 / 원문자 행으로 나눈다."""
-    if not lines:
-        return lines
-    out: list[PdfLine] = []
-    seq = 0
-    for ln in lines:
-        text = ln.text or ""
-        if not (_has_underline_markup(text) and _CIRCLED_RE.search(text)):
-            out.append(ln)
-            continue
-        body, labels = _strip_circled_from_text(text)
-        if not labels:
-            out.append(ln)
-            continue
-        body_line = PdfLine(
-            id=ln.id,
-            text=body,
-            bbox=ln.bbox,
-            span_ids=list(ln.span_ids),
-            page_number=ln.page_number,
-            reading_order=ln.reading_order,
-        )
-        seq += 1
-        y1 = ln.bbox[3]
-        label_line = PdfLine(
-            id=f"{ln.id}-labels-{seq}",
-            text=" ".join(labels),
-            bbox=(ln.bbox[0], y1, ln.bbox[2], y1 + 2.0),
-            span_ids=[],
-            page_number=ln.page_number,
-            reading_order=ln.reading_order,
-        )
-        out.append(body_line)
-        out.append(label_line)
-    return out
-
-
 def merge_circled_label_lines(lines: list[PdfLine]) -> list[PdfLine]:
     """가로로 흩어진 원문자 전용 행을 한 줄로 합친다 (ⓐ ⓑ ⓒ …)."""
     if not lines:
@@ -131,7 +60,6 @@ def merge_circled_label_lines(lines: list[PdfLine]) -> list[PdfLine]:
         j = i + 1
         while j < len(lines) and _is_label_only_line(lines[j].text):
             prev = run[-1]
-            # 바로 아래·같은 밴드의 라벨 행만 병합 (본문이 끼면 중단)
             if lines[j].bbox[1] - prev.bbox[3] > _LABEL_LINE_Y_GAP:
                 break
             run.append(lines[j])
@@ -140,7 +68,6 @@ def merge_circled_label_lines(lines: list[PdfLine]) -> list[PdfLine]:
         labels: list[str] = []
         for piece in run_sorted:
             labels.extend(_circled_chars(piece.text))
-        # 중복 없이 등장 순 유지
         seen: set[str] = set()
         ordered: list[str] = []
         for ch in labels:
@@ -235,7 +162,7 @@ def linearize_page_graphics(
     tables: list[PdfTable] | None = None,
     figures: list[PdfFigure] | None = None,
 ) -> list[PdfLine]:
-    """향찰 2행 직렬화 + 표·그림 승격 + 박스 표선."""
+    """흩어진 원문자 행 병합 + 표·그림 승격 + 박스 표선."""
     table_list = tables or []
     figure_list = figures or []
     if not lines:
@@ -244,7 +171,6 @@ def linearize_page_graphics(
             return promote_figures_into_lines([], figure_list, page_number=page_number)
         return lines
     page_number = lines[0].page_number
-    lines = split_stacked_hyangchal_lines(lines)
     lines = merge_circled_label_lines(lines)
     if table_list:
         lines = promote_tables_into_lines(lines, table_list, page_number=page_number)
