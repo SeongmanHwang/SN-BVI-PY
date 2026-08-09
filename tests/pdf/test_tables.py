@@ -6,8 +6,10 @@ from pathlib import Path
 
 import fitz
 
+from korean_exam_braille.app.pdf.boxes import BOX_RULE_INK
 from korean_exam_braille.app.pdf.extractor import extract_page_spans, extract_pdf
 from korean_exam_braille.app.pdf.models import (
+    PdfLine,
     PdfPageStructure,
     PdfTable,
     PdfTableCell,
@@ -15,6 +17,7 @@ from korean_exam_braille.app.pdf.models import (
 from korean_exam_braille.app.pdf.tables import (
     detect_vector_tables,
     format_table_row_texts,
+    promote_tables_into_lines,
     vector_table_diagnostics,
 )
 
@@ -282,6 +285,68 @@ def test_detect_two_level_header_with_merged_cells():
     assert rows[0] == "구분  어간(접사  어근  접사)  어미"
     assert rows[1] == "㉠  ㆍ  높-, 푸르-  ㆍ  -며"
     doc.close()
+
+
+def test_promote_tables_wraps_with_outer_rule_lines():
+    """표 시작·끝에만 ─ 표선. 내부 격자선 행은 내지 않는다."""
+    table = PdfTable(
+        bbox=(10.0, 100.0, 200.0, 160.0),
+        row_count=2,
+        column_count=2,
+        cells=[
+            PdfTableCell(
+                text="가",
+                bbox=(10.0, 100.0, 100.0, 130.0),
+                row=0,
+                column=0,
+            ),
+            PdfTableCell(
+                text="나",
+                bbox=(100.0, 100.0, 200.0, 130.0),
+                row=0,
+                column=1,
+            ),
+            PdfTableCell(
+                text="다",
+                bbox=(10.0, 130.0, 100.0, 160.0),
+                row=1,
+                column=0,
+            ),
+            PdfTableCell(
+                text="라",
+                bbox=(100.0, 130.0, 200.0, 160.0),
+                row=1,
+                column=1,
+            ),
+        ],
+    )
+    raw = [
+        PdfLine(
+            id="outside",
+            text="바깥",
+            bbox=(10.0, 50.0, 80.0, 60.0),
+            span_ids=[],
+            page_number=1,
+            reading_order=0,
+        ),
+        PdfLine(
+            id="inside",
+            text="셀가나",
+            bbox=(20.0, 110.0, 180.0, 150.0),
+            span_ids=[],
+            page_number=1,
+            reading_order=1,
+        ),
+    ]
+    out = promote_tables_into_lines(raw, [table], page_number=1)
+    texts = [ln.text for ln in out]
+    assert texts[0] == "바깥"
+    table_chunk = texts[1:]
+    assert table_chunk[0] == BOX_RULE_INK
+    assert table_chunk[-1] == BOX_RULE_INK
+    assert table_chunk.count(BOX_RULE_INK) == 2
+    assert "가" in table_chunk[1] and "나" in table_chunk[1]
+    assert "다" in table_chunk[2] and "라" in table_chunk[2]
 
 
 def test_table_cell_span_roundtrip_in_page_dict():

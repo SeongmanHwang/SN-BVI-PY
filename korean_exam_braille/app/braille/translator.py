@@ -27,6 +27,9 @@ from korean_exam_braille.app.common.korean_tables import (
     HIDE_MARK_CLOSE,
     HIDE_MARK_OPEN,
     HIDE_MARK_UNIT,
+    HIDE_SQUARE_UNIT,
+    HIDE_TRIANGLE_UNIT,
+    HIDE_X_UNIT,
     TENSED_MAP,
     TENSED_PREFIX,
     WORD_ABBREV,
@@ -125,14 +128,31 @@ _PUNCT_TO_ASCII: dict[str, str] = {
     "ⓒ": "7c7",
 }
 
-# 동그라미 숨김표 (○×n → _0…0l). 규: 4-5-6 + (3-5-6)×개수 + 1-2-3
+# 숨김/기호 표: 4-5-6 + (단위)×개수 + 1-2-3
 _HIDE_CIRCLE_CHARS = frozenset("○〇◯")
+_HIDE_SQUARE_CHARS = frozenset("□■")
+_HIDE_TRIANGLE_CHARS = frozenset("△")
+_HIDE_X_CHARS = frozenset("✕✗")
 
 
 def _encode_hide_circles(count: int) -> str:
     if count < 1:
         return ""
     return HIDE_MARK_OPEN + (HIDE_MARK_UNIT * count) + HIDE_MARK_CLOSE
+
+
+def _encode_hide_squares(count: int) -> str:
+    if count < 1:
+        return ""
+    return HIDE_MARK_OPEN + (HIDE_SQUARE_UNIT * count) + HIDE_MARK_CLOSE
+
+
+def _encode_hide_triangle() -> str:
+    return HIDE_MARK_OPEN + HIDE_TRIANGLE_UNIT + HIDE_MARK_CLOSE
+
+
+def _encode_hide_x_mark() -> str:
+    return HIDE_MARK_OPEN + HIDE_X_UNIT + HIDE_MARK_CLOSE
 
 
 _CIRCLED_DIGIT_CELL = {
@@ -472,6 +492,24 @@ def _hangul_body_to_ascii_masked(text: str) -> tuple[str, list[bool]]:
                 j += 1
             emit(_encode_hide_circles(j - i))
             i = j
+            continue
+
+        if ch in _HIDE_SQUARE_CHARS:
+            j = i
+            while j < n and text[j] in _HIDE_SQUARE_CHARS:
+                j += 1
+            emit(_encode_hide_squares(j - i))
+            i = j
+            continue
+
+        if ch in _HIDE_TRIANGLE_CHARS:
+            emit(_encode_hide_triangle())
+            i += 1
+            continue
+
+        if ch in _HIDE_X_CHARS:
+            emit(_encode_hide_x_mark())
+            i += 1
             continue
 
         if ch in _CIRCLED_DIGIT_CELL:

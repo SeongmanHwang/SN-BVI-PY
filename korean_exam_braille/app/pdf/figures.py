@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from korean_exam_braille.app.common.figure_markup import FIGURE_INK
+from korean_exam_braille.app.pdf.boxes import line_mostly_in_box
 from korean_exam_braille.app.pdf.models import BBox, PdfFigure, PdfLine
 
 # 아이콘·장식 조각을 걸러 내기 위한 최소 크기(병합 후 기준)
@@ -17,6 +18,72 @@ _STRIP_MIN_AREA = 400.0
 # 가로로 잘린 조각을 한 그림으로 묶을 때
 _X_ALIGN_TOL = 4.0
 _Y_GAP_TOL = 8.0
+# 그림 위(겹친) 글자만 생략 — 근처 캡션은 유지
+_FIGURE_TEXT_OVERLAP = 0.55
+# 그림 바로 아래 좁은 공백의 범례도 생략 (겹침 없이)
+_FIGURE_BOTTOM_GAP_MAX = 10.0
+_FIGURE_BOTTOM_X_OVERLAP = 0.35
+# 노트형처럼 글자가 많이 얹힌 래스터는 그림 생략 예외 (글자 수만)
+_TEXT_DENSE_MIN_CHARS = 60
+
+
+def _horizontal_overlap_ratio(line_bbox: BBox, figure_bbox: BBox) -> float:
+    lx0, _, lx1, _ = line_bbox
+    fx0, _, fx1, _ = figure_bbox
+    ox0, ox1 = max(lx0, fx0), min(lx1, fx1)
+    if ox1 <= ox0:
+        return 0.0
+    line_w = max(lx1 - lx0, 1.0)
+    return (ox1 - ox0) / line_w
+
+
+def _line_is_bottom_legend(line_bbox: BBox, figure_bbox: BBox) -> bool:
+    """그림 하단과 좁은 공백만 두고 가로로 걸친 글자(범례)."""
+    _, ly0, _, ly1 = line_bbox
+    _, _, _, fy1 = figure_bbox
+    if ly1 <= fy1:
+        return False
+    gap = ly0 - fy1
+    if gap < -1.0 or gap > _FIGURE_BOTTOM_GAP_MAX:
+        return False
+    return _horizontal_overlap_ratio(line_bbox, figure_bbox) >= _FIGURE_BOTTOM_X_OVERLAP
+
+
+def _line_is_figure_overlay(
+    line_bbox: BBox,
+    figure_bbox: BBox,
+    *,
+    overlap_min: float,
+) -> bool:
+    if line_mostly_in_box(line_bbox, figure_bbox, min_overlap=overlap_min):
+        return True
+    return _line_is_bottom_legend(line_bbox, figure_bbox)
+
+
+def _overlapping_lines(
+    lines: list[PdfLine],
+    figure: PdfFigure,
+    *,
+    overlap_min: float,
+) -> list[PdfLine]:
+    return [
+        line
+        for line in lines
+        if _line_is_figure_overlay(line.bbox, figure.bbox, overlap_min=overlap_min)
+    ]
+
+
+def _is_text_dense_figure(
+    figure: PdfFigure,
+    lines: list[PdfLine],
+    *,
+    overlap_min: float = _FIGURE_TEXT_OVERLAP,
+    min_chars: int = _TEXT_DENSE_MIN_CHARS,
+) -> bool:
+    """그림 bbox 위에 본문 글자가 충분히 얹혀 있으면 True (노트·도표 캡처 등)."""
+    hits = _overlapping_lines(lines, figure, overlap_min=overlap_min)
+    chars = sum(len((ln.text or "").replace(" ", "").replace("\t", "")) for ln in hits)
+    return chars >= min_chars
 
 
 def _union(a: BBox, b: BBox) -> BBox:
@@ -106,15 +173,41 @@ def promote_figures_into_lines(
     figures: list[PdfFigure],
     *,
     page_number: int,
+    overlap_min: float = _FIGURE_TEXT_OVERLAP,
 ) -> list[PdfLine]:
-    """읽기 순서에 ``[그림]`` 자리표시 행을 끼운다."""
+    """일반 그림: 겹친 글자 생략 후 ``[그림]``. 글자 많은 노트형은 예외.
+
+    행 bbox가 그림과 ``overlap_min`` 이상 겹치거나, 바로 아래 좁은 공백의
+    가로 정렬 글자(범례)면 생략한다. 겹치는 글자 수가 많으면(노트형) 그림을
+    무시하고 글자를 모두 유지한다. 여유 있는 아래 캡션은 남긴다.
+    """
     if not figures:
         return lines
+
+    graphic_figures = [
+        figure
+        for figure in figures
+        if not _is_text_dense_figure(figure, lines, overlap_min=overlap_min)
+    ]
+    if not graphic_figures:
+        return lines
+
+    kept = [
+        line
+        for line in lines
+        if not any(
+            _line_is_figure_overlay(
+                line.bbox, figure.bbox, overlap_min=overlap_min
+            )
+            for figure in graphic_figures
+        )
+    ]
+
     promoted: list[PdfLine] = []
-    for index, figure in enumerate(figures):
+    for index, figure in enumerate(graphic_figures):
         overlap_tops = [
             line.bbox[1]
-            for line in lines
+            for line in kept
             if line.bbox[3] >= figure.bbox[1] - 1.0
             and line.bbox[1] <= figure.bbox[3] + 1.0
         ]
@@ -130,7 +223,7 @@ def promote_figures_into_lines(
                 reading_order=0,
             )
         )
-    merged = list(lines) + promoted
+    merged = kept + promoted
     merged.sort(
         key=lambda line: (
             line.bbox[1],
@@ -142,3 +235,17 @@ def promote_figures_into_lines(
     for index, line in enumerate(merged):
         line.reading_order = index
     return merged
+
+
+def filter_graphic_figures(
+    figures: list[PdfFigure],
+    lines: list[PdfLine],
+    *,
+    overlap_min: float = _FIGURE_TEXT_OVERLAP,
+) -> list[PdfFigure]:
+    """노트형(글자 밀집)을 제외한 순수 그림만 남긴다."""
+    return [
+        figure
+        for figure in figures
+        if not _is_text_dense_figure(figure, lines, overlap_min=overlap_min)
+    ]

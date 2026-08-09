@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from korean_exam_braille.app.pdf.boxes import (
+    BOX_RULE_INK,
     _dedupe_segments,
     _merge_collinear,
     line_mostly_in_box,
@@ -628,8 +629,12 @@ def promote_tables_into_lines(
     tables: list[PdfTable],
     *,
     page_number: int,
+    rule_text: str = BOX_RULE_INK,
 ) -> list[PdfLine]:
-    """표 영역 원문 행을 셀 격자 행으로 바꾼다."""
+    """표 영역 원문 행을 셀 격자 행으로 바꾸고 외곽만 표선으로 감싼다.
+
+    내부 격자(행·열 테두리)는 그리지 않고, 시작·끝 ``─`` 표선만 둔다.
+    """
     if not lines or not tables:
         return lines
 
@@ -643,20 +648,54 @@ def promote_tables_into_lines(
     ]
     promoted: list[PdfLine] = []
     for table_index, table in enumerate(tables):
-        for row, (text, y0, y1) in enumerate(format_table_rows(table)):
+        x0, y0, x1, y1 = table.bbox
+        body_rows = list(format_table_rows(table))
+        if not body_rows:
+            continue
+        promoted.append(
+            PdfLine(
+                id=f"p{page_number}-table{table_index}-top",
+                text=rule_text,
+                bbox=(x0, y0 - 1.0, x1, y0),
+                span_ids=[],
+                page_number=page_number,
+                reading_order=0,
+            )
+        )
+        for row, (text, row_y0, row_y1) in enumerate(body_rows):
             promoted.append(
                 PdfLine(
                     id=f"p{page_number}-table{table_index}-r{row}",
                     text=text,
-                    bbox=(table.bbox[0], y0, table.bbox[2], y1),
+                    bbox=(x0, row_y0, x1, row_y1),
                     span_ids=[],
                     page_number=page_number,
                     reading_order=0,
                 )
             )
+        promoted.append(
+            PdfLine(
+                id=f"p{page_number}-table{table_index}-bot",
+                text=rule_text,
+                bbox=(x0, y1, x1, y1 + 1.0),
+                span_ids=[],
+                page_number=page_number,
+                reading_order=0,
+            )
+        )
 
     merged = kept + promoted
     merged.sort(key=lambda line: (line.bbox[1], line.bbox[0], line.id))
-    for index, line in enumerate(merged):
+    # 인접 표선이 겹치면 한 줄로 (표 외곽 + 박스 표선 중복 방지의 전처리)
+    compacted: list[PdfLine] = []
+    for line in merged:
+        if (
+            compacted
+            and compacted[-1].text == rule_text
+            and line.text == rule_text
+        ):
+            continue
+        compacted.append(line)
+    for index, line in enumerate(compacted):
         line.reading_order = index
-    return merged
+    return compacted

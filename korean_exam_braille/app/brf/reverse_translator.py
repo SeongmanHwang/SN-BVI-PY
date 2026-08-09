@@ -31,6 +31,9 @@ from korean_exam_braille.app.common.korean_tables import (
     HIDE_MARK_CLOSE,
     HIDE_MARK_OPEN,
     HIDE_MARK_UNIT,
+    HIDE_SQUARE_UNIT,
+    HIDE_TRIANGLE_UNIT,
+    HIDE_X_UNIT,
     ROMAN_END_SIGN,
     NUMBER_MAP,
     NUMBER_SIGN,
@@ -327,20 +330,55 @@ def _try_circled_digit(chars: list[str], i: int, out: list[str]) -> int | None:
     return None
 
 
-def _try_hide_circles(chars: list[str], i: int, out: list[str]) -> int | None:
-    """동그라미 숨김표: _ + 0×n + l → ○×n (선택지 _0 보다 긴 패턴 우선)."""
+def _try_hide_framed(
+    chars: list[str],
+    i: int,
+    out: list[str],
+    *,
+    unit: str,
+    ink: str,
+) -> int | None:
+    """숨김/기호 표: _ + unit×n + l → ink×n."""
     if _norm_cell(chars[i]) != HIDE_MARK_OPEN:
         return None
     j = i + 1
-    while j < len(chars) and _norm_cell(chars[j]) == HIDE_MARK_UNIT:
+    while j < len(chars) and _norm_cell(chars[j]) == unit:
         j += 1
-    nzeros = j - (i + 1)
-    if nzeros < 1:
+    n_mid = j - (i + 1)
+    if n_mid < 1:
         return None
     if j >= len(chars) or _norm_cell(chars[j]) != HIDE_MARK_CLOSE:
         return None
-    out.append("○" * nzeros)
+    out.append(ink * n_mid)
     return j + 1
+
+
+def _try_hide_circles(chars: list[str], i: int, out: list[str]) -> int | None:
+    """동그라미 숨김표: _ + 0×n + l → ○×n (선택지 _0 보다 긴 패턴 우선)."""
+    return _try_hide_framed(
+        chars, i, out, unit=HIDE_MARK_UNIT, ink="○"
+    )
+
+
+def _try_hide_squares(chars: list[str], i: int, out: list[str]) -> int | None:
+    """네모: _ + 7×n + l → □×n."""
+    return _try_hide_framed(
+        chars, i, out, unit=HIDE_SQUARE_UNIT, ink="□"
+    )
+
+
+def _try_hide_triangle(chars: list[str], i: int, out: list[str]) -> int | None:
+    """세모: _ + + + l → △."""
+    return _try_hide_framed(
+        chars, i, out, unit=HIDE_TRIANGLE_UNIT, ink="△"
+    )
+
+
+def _try_hide_x_mark(chars: list[str], i: int, out: list[str]) -> int | None:
+    """가위표: _ + x + l → ✕."""
+    return _try_hide_framed(
+        chars, i, out, unit=HIDE_X_UNIT, ink="✕"
+    )
 
 
 def _try_choice_item_mark(chars: list[str], i: int, out: list[str]) -> int | None:
@@ -650,6 +688,18 @@ def _try_on_sign(chars: list[str], i: int, out: list[str]) -> int | None:
     return end
 
 
+def _try_standalone_rieul_period(
+    chars: list[str], i: int, out: list[str]
+) -> int | None:
+    """음절 밖 단독 ⠂⠲(14) → ㄹ. (겹받침 ㄿ이 아님)."""
+    if _norm_cell(chars[i]) != "1":
+        return None
+    if _peek(chars, i + 1) != "4":
+        return None
+    out.append("ㄹ.")
+    return i + 2
+
+
 def _try_skip_decorative_run(chars: list[str], i: int) -> int | None:
     """행 중간 장식/표선 반복 셀 건너뛰기 (ggg…, 333…)."""
     if i >= len(chars):
@@ -869,10 +919,19 @@ def reverse_translate_line(raw_ascii: str) -> str:
             i = jumped
             continue
 
-        # 1b2) 동그라미 숨김표 (_0…0l) — 선택지 _0 보다 먼저
-        jumped = _try_hide_circles(chars, i, out)
+        # 1b2) 숨김/기호 표 (_0…0l, _7…7l, _+l, _xl) — 선택지 _0 보다 먼저
+        jumped = None
+        for _try_hide in (
+            _try_hide_circles,
+            _try_hide_squares,
+            _try_hide_triangle,
+            _try_hide_x_mark,
+        ):
+            jumped = _try_hide(chars, i, out)
+            if jumped is not None:
+                i = jumped
+                break
         if jumped is not None:
-            i = jumped
             continue
 
         # 1c) 선택지 항목 표지 _0 (⠇⠴)
@@ -1085,7 +1144,13 @@ def reverse_translate_line(raw_ascii: str) -> str:
             )
             continue
 
-        # 12) 1칸 구두점
+        # 12) 음절 밖 단독 ⠂⠲ → ㄹ. (쉼표+마침표·ㄿ 아님)
+        jumped = _try_standalone_rieul_period(chars, i, out)
+        if jumped is not None:
+            i = jumped
+            continue
+
+        # 13) 1칸 구두점
         if n in PUNCT_SINGLE:
             # 8: 문장 끝·닫는부호 앞이면 물음표 (점역 공백 구분용 스페이스 제거)
             if n == "8" and _is_period_disambig_boundary(chars, i + 1):

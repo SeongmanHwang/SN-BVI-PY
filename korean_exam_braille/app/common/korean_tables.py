@@ -187,10 +187,13 @@ NUMBER_MAP = dict(zip("abcdefghij", "1234567890"))
 LETTER_SIGN = ";"  # 외국어표로도 쓰임 — 한글 ㅊ과 충돌, 숫자 뒤 등 문맥
 ROMAN_SIGN = "0"  # ⠴ — 종성 ㅎ·닫는따옴표와 충돌
 ROMAN_END_SIGN = "4"  # ⠲(2-5-6) 로마자종료표 — 마침표·종성 ㅍ과 동일 셀
-# 동그라미 숨김표: 4-5-6 + (3-5-6)×개수 + 1-2-3 → _ + 0*n + l
+# 숨김/기호 표: 4-5-6 + (단위)×개수 + 1-2-3
 HIDE_MARK_OPEN = "_"  # ⠸ 4-5-6
-HIDE_MARK_UNIT = "0"  # ⠴ 3-5-6
 HIDE_MARK_CLOSE = "l"  # ⠇ 1-2-3
+HIDE_MARK_UNIT = "0"  # ⠴ 3-5-6 — 동그라미 ○
+HIDE_SQUARE_UNIT = "7"  # ⠶ 2-3-5-6 — 네모 □·■
+HIDE_TRIANGLE_UNIT = "+"  # ⠬ 3-4-6 — 세모 △
+HIDE_X_UNIT = "x"  # ⠭ 1-3-4-6 — 가위표 ✕·✗
 CAPITAL_SIGN = ","  # 영문 대문자표 — 된소리표와 충돌(영문 모드에서만)
 ON_SIGN = "="  # 온표 ⠿ — 옹(약자)과 동일 셀 → 문맥 구분
 
@@ -324,6 +327,9 @@ def _build_on_sign_bodies() -> list[tuple[str, str]]:
     for jamo, seq in JAMO_COMPAT_TO_ASCII.items():
         if seq.startswith(ON_SIGN) and len(seq) > 1:
             bodies[seq[1:]] = jamo
+    # ㄹ. (=1 + 마침표 4)와 =14(ㄿ)가 동일 셀열.
+    # 받침 ㄿ는 음절 종성 겹받침으로만 두고, 단독 온표 본문은 ㄹ. 로 푼다.
+    bodies.pop("14", None)
     # 초성 점형 별칭 (구 인코딩·일부 교재)
     for cell, jamo in CHOSEONG.items():
         bodies.setdefault(cell, jamo)

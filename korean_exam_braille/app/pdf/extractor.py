@@ -25,7 +25,11 @@ from korean_exam_braille.app.pdf.models import (
     PdfPageStructure,
     PdfSpan,
 )
-from korean_exam_braille.app.pdf.figures import FIGURE_INK, detect_raster_figures
+from korean_exam_braille.app.pdf.figures import (
+    FIGURE_INK,
+    detect_raster_figures,
+    filter_graphic_figures,
+)
 from korean_exam_braille.app.pdf.tables import (
     clear_underlines_inside_tables,
     detect_vector_tables,
@@ -120,6 +124,8 @@ def build_page_structure(
         page_width=float(rect.width),
         profile=profile,
     )
+    # 노트형(글자 밀집) 래스터는 [그림] 처리에서 제외
+    figures = filter_graphic_figures(figures, lines)
     # 흩어진 원문자 행 병합 + 표·그림 승격 + 박스 표선
     lines = linearize_page_graphics(page, lines, tables=tables, figures=figures)
     # 오른쪽 여백 [A]~[E] 꺾인 괄호 → 행 소속

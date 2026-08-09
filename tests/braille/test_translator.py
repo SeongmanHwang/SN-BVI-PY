@@ -194,6 +194,24 @@ def test_hide_circles_whitespace_mark():
     assert reverse_translate_line(hangul_text_to_ascii(src)) == src
 
 
+def test_hide_square_triangle_x_marks():
+    """네모□■ / 세모△ / 가위표✕✗ 숨김·기호 표."""
+    assert hangul_text_to_ascii("□") == "_7l"
+    assert hangul_text_to_ascii("□□") == "_77l"
+    assert hangul_text_to_ascii("■□") == "_77l"
+    assert hangul_text_to_ascii("△") == "_+l"
+    assert hangul_text_to_ascii("✕") == "_xl"
+    assert hangul_text_to_ascii("✗") == "_xl"
+    assert reverse_translate_line("_7l") == "□"
+    assert reverse_translate_line("_77l") == "□□"
+    assert reverse_translate_line("_+l") == "△"
+    assert reverse_translate_line("_xl") == "✕"
+    src = "정답은 □□, 오답은 ✕, 미정은 △."
+    ascii_text = hangul_text_to_ascii(src)
+    assert "_77l" in ascii_text and "_xl" in ascii_text and "_+l" in ascii_text
+    assert reverse_translate_line(ascii_text) == src
+
+
 def test_circled_latin_a_to_e():
     """ⓐ–ⓩ → 7a7…7z7 (①의 7#a7 과 구분)."""
     assert hangul_text_to_ascii("ⓐ") == "7a7"

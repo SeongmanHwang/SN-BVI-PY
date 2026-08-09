@@ -9,7 +9,11 @@
 
 from __future__ import annotations
 
-from korean_exam_braille.app.pdf.boxes import iter_box_rects, line_mostly_in_box
+from korean_exam_braille.app.pdf.boxes import (
+    BOX_RULE_INK,
+    iter_box_rects,
+    line_mostly_in_box,
+)
 from korean_exam_braille.app.pdf.figures import promote_figures_into_lines
 from korean_exam_braille.app.pdf.models import BBox, PdfFigure, PdfLine, PdfTable
 from korean_exam_braille.app.pdf.tables import (
@@ -18,8 +22,6 @@ from korean_exam_braille.app.pdf.tables import (
 )
 
 _CIRCLED_LATIN = set("ⓐⓑⓒⓓⓔⓕⓖⓗⓘⓙⓚⓛⓜⓝⓞⓟⓠⓡⓢⓣⓤⓥⓦⓧⓨⓩ")
-
-BOX_RULE_INK = "─" * 16
 
 # 라벨 전용 행으로 볼 y 간격 (연속 행 병합)
 _LABEL_LINE_Y_GAP = 18.0

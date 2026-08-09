@@ -29,6 +29,8 @@ _DEDUP_TOL = 0.5
 _MERGE_GAP = 2.5
 # 제시문 하단 등으로 쓸 긴 수평선
 _MIN_RULE_W = 120.0
+# 구조 박스·표 외곽용 표선 묵자 (점역은 !333…4 등으로)
+BOX_RULE_INK = "─" * 16
 
 
 def _rect_from_item(item: tuple[Any, ...]) -> BBox | None:
