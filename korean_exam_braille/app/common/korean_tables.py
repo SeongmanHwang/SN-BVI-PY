@@ -187,6 +187,10 @@ NUMBER_MAP = dict(zip("abcdefghij", "1234567890"))
 LETTER_SIGN = ";"  # 외국어표로도 쓰임 — 한글 ㅊ과 충돌, 숫자 뒤 등 문맥
 ROMAN_SIGN = "0"  # ⠴ — 종성 ㅎ·닫는따옴표와 충돌
 ROMAN_END_SIGN = "4"  # ⠲(2-5-6) 로마자종료표 — 마침표·종성 ㅍ과 동일 셀
+# 동그라미 숨김표: 4-5-6 + (3-5-6)×개수 + 1-2-3 → _ + 0*n + l
+HIDE_MARK_OPEN = "_"  # ⠸ 4-5-6
+HIDE_MARK_UNIT = "0"  # ⠴ 3-5-6
+HIDE_MARK_CLOSE = "l"  # ⠇ 1-2-3
 CAPITAL_SIGN = ","  # 영문 대문자표 — 된소리표와 충돌(영문 모드에서만)
 ON_SIGN = "="  # 온표 ⠿ — 옹(약자)과 동일 셀 → 문맥 구분
 

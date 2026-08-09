@@ -180,6 +180,20 @@ def test_circled_choice_to_marked_digit():
     assert reverse_translate_line("7#e7") == "⑤"
 
 
+def test_hide_circles_whitespace_mark():
+    """동그라미 숨김표: 4-5-6 + (3-5-6)×n + 1-2-3 → _0…0l."""
+    assert hangul_text_to_ascii("○") == "_0l"
+    assert hangul_text_to_ascii("○○") == "_00l"
+    assert hangul_text_to_ascii("〇〇") == "_00l"
+    assert hangul_text_to_ascii("◯◯◯") == "_000l"
+    assert reverse_translate_line("_0l") == "○"
+    assert reverse_translate_line("_00l") == "○○"
+    assert reverse_translate_line("_000l") == "○○○"
+    src = "(가) 2026. 05. ○○."
+    assert "_00l" in hangul_text_to_ascii(src)
+    assert reverse_translate_line(hangul_text_to_ascii(src)) == src
+
+
 def test_circled_latin_a_to_e():
     """ⓐ–ⓩ → 7a7…7z7 (①의 7#a7 과 구분)."""
     assert hangul_text_to_ascii("ⓐ") == "7a7"

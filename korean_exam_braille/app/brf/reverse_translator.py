@@ -28,6 +28,9 @@ from korean_exam_braille.app.common.korean_tables import (
     JUNGSEONG,
     JUNGSEONG_DIGRAPHS,
     LETTER_SIGN,
+    HIDE_MARK_CLOSE,
+    HIDE_MARK_OPEN,
+    HIDE_MARK_UNIT,
     ROMAN_END_SIGN,
     NUMBER_MAP,
     NUMBER_SIGN,
@@ -135,15 +138,18 @@ _COMMON_TIEUT_SYLLABLES = frozenset(
 
 
 def _prefer_jong_tieut(cho: str, jung: str, out: list[str] | None) -> bool:
-    """문장 끝 셀 8을 종성 ㅌ으로 볼지.
+    """짧은 어절(≤2) 문장 끝 셀 8을 종성 ㅌ으로 볼지 (물음표 보조 규칙).
 
     - 지금 조립 중인 음절만으로 된 어절(밭/끝/밑) → ㅌ
     - 흔한 ㅌ받침 음절(같/맡 등) → ㅌ
-    - 그 외(까요?/것은? 등) → 물음표
+    - 그 외(까요?/것은? 등) → 물음표 (정방향은 ≤2면 공백+8)
     """
     if _out_word_hangul_count(out) == 0:
         return True
     return _syllable(cho, jung, "ㅌ") in _COMMON_TIEUT_SYLLABLES
+
+
+_JONG_PUNCT_DISAMBIG_MAX_SYL = 2
 
 
 def _out_word_hangul_count(out: list[str] | None) -> int:
@@ -321,6 +327,22 @@ def _try_circled_digit(chars: list[str], i: int, out: list[str]) -> int | None:
     return None
 
 
+def _try_hide_circles(chars: list[str], i: int, out: list[str]) -> int | None:
+    """동그라미 숨김표: _ + 0×n + l → ○×n (선택지 _0 보다 긴 패턴 우선)."""
+    if _norm_cell(chars[i]) != HIDE_MARK_OPEN:
+        return None
+    j = i + 1
+    while j < len(chars) and _norm_cell(chars[j]) == HIDE_MARK_UNIT:
+        j += 1
+    nzeros = j - (i + 1)
+    if nzeros < 1:
+        return None
+    if j >= len(chars) or _norm_cell(chars[j]) != HIDE_MARK_CLOSE:
+        return None
+    out.append("○" * nzeros)
+    return j + 1
+
+
 def _try_choice_item_mark(chars: list[str], i: int, out: list[str]) -> int | None:
     """선택지 항목 표지 ⠇⠴ (_0) — 묵자에서는 생략."""
     if _slice_norm(chars, i, 2) != "_0":
@@ -415,8 +437,10 @@ def _take_final(
                 세 음절 이상 어절 뒤 ``4`` → 마침표
 
     종성 ㅌ과 물음표는 동일 셀(ASCII ``8``):
-      - 문장 끝(공백·EOL·밑줄 표지)에서 흔한 ㅌ받침 음절/단독 어절 → ㅌ
-      - 그 외 문장 끝 → 물음표
+      - 점역: 두 음절 이하 어절 뒤 물음표 앞에 공백
+      - 역점역: 공백·EOL·밑줄·닫는부호 앞에서,
+                짧은 어절(≤2) + 흔한 ㅌ받침/단독 어절 → ㅌ,
+                긴 어절(≥3) 또는 그 외 → 물음표
     """
     if i >= len(chars):
         return None
@@ -444,14 +468,16 @@ def _take_final(
     if n == "4" and _is_period_disambig_boundary(chars, i + 1):
         # +1: 지금 조립 중인 음절
         word_syl = _out_word_hangul_count(out) + 1
-        if word_syl <= 2:
+        if word_syl <= _JONG_PUNCT_DISAMBIG_MAX_SYL:
             return JONGSEONG["4"], i + 1, False
         return ".", i + 1, True
 
-    # 물음표(8) ↔ 종성 ㅌ(8) — 문장 끝이면 맥락으로 구분
-    if n == "8" and _is_tail_boundary(chars, i + 1):
+    # 물음표(8) ↔ 종성 ㅌ(8) — 어절 길이 + 화이트리스트 보조
+    if n == "8" and _is_period_disambig_boundary(chars, i + 1):
+        word_syl = _out_word_hangul_count(out) + 1
         if (
-            cho is not None
+            word_syl <= _JONG_PUNCT_DISAMBIG_MAX_SYL
+            and cho is not None
             and jung is not None
             and _prefer_jong_tieut(cho, jung, out)
         ):
@@ -843,6 +869,12 @@ def reverse_translate_line(raw_ascii: str) -> str:
             i = jumped
             continue
 
+        # 1b2) 동그라미 숨김표 (_0…0l) — 선택지 _0 보다 먼저
+        jumped = _try_hide_circles(chars, i, out)
+        if jumped is not None:
+            i = jumped
+            continue
+
         # 1c) 선택지 항목 표지 _0 (⠇⠴)
         jumped = _try_choice_item_mark(chars, i, out)
         if jumped is not None:
@@ -1055,8 +1087,10 @@ def reverse_translate_line(raw_ascii: str) -> str:
 
         # 12) 1칸 구두점
         if n in PUNCT_SINGLE:
-            # 8: 문장 끝(공백·EOL·밑줄)이면 물음표 우선
-            if n == "8" and _is_tail_boundary(chars, i + 1):
+            # 8: 문장 끝·닫는부호 앞이면 물음표 (점역 공백 구분용 스페이스 제거)
+            if n == "8" and _is_period_disambig_boundary(chars, i + 1):
+                if out and out[-1] == " ":
+                    out.pop()
                 out.append("?")
                 i += 1
                 continue

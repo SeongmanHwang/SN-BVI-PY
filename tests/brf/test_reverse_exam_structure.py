@@ -33,8 +33,10 @@ def test_letter_range_tilde():
     assert hangul_text_to_ascii("~") == "@9"
     assert r("@9") == "~"
     # 로마자는 로마자표(0)와 함께 — 표지 없는 a/e 는 한글로 보지 않음
-    assert hangul_text_to_ascii("‘a’~‘e’") == ",80a0'@9,80e0'"
+    # 닫는따옴표 앞에는 로마자종료표(4)
+    assert hangul_text_to_ascii("‘a’~‘e’") == ",80a40'@9,80e40'"
     assert r(",80a0'@9,80e0'") == "‘a’~‘e’"
+    assert r(",80a40'@9,80e40'") == "‘a’~‘e’"
     assert r(hangul_text_to_ascii("‘a’~‘e’")) == "‘a’~‘e’"
 
 
@@ -42,8 +44,9 @@ def test_quoted_eun_vs_latin_z():
     """은 약자 z vs 로마자 z — 로마자표 유무로 구분."""
     assert hangul_text_to_ascii("‘은’") == ",8z0'"
     assert r(",8z0'") == "‘은’"
-    assert hangul_text_to_ascii("‘z’") == ",80z0'"
+    assert hangul_text_to_ascii("‘z’") == ",80z40'"
     assert r(",80z0'") == "‘z’"
+    assert r(",80z40'") == "‘z’"
     src = "초성 소릿값을, ‘隱(은)’은 ‘ㄴ’의"
     assert r(hangul_text_to_ascii(src)) == "초성 소릿값을, ‘은’은 ‘ㄴ’의"
 

@@ -24,6 +24,9 @@ from korean_exam_braille.app.common.korean_tables import (
     NUMBER_SIGN,
     ROMAN_END_SIGN,
     ROMAN_SIGN,
+    HIDE_MARK_CLOSE,
+    HIDE_MARK_OPEN,
+    HIDE_MARK_UNIT,
     TENSED_MAP,
     TENSED_PREFIX,
     WORD_ABBREV,
@@ -64,11 +67,13 @@ _VC_ABBREV: dict[tuple[str, str], str] = {
 
 _DIGIT_TO_ASCII: dict[str, str] = {v: k for k, v in NUMBER_MAP.items()}
 
-# 종성 ㅍ과 마침표는 같은 점자 셀(ASCII ``4``).
-# 점역 규칙: 두 음절 이하 한글 어절 뒤 마침표 앞에 공백을 넣어 종성 ㅍ과 구분한다.
-# 역점역 규칙: 공백 없이 짧은 어절(≤2음절) 뒤의 ``4`` → 종성 ㅍ,
-#               긴 어절(≥3) 뒤이거나 공백 뒤의 ``4`` → 마침표.
+# 종성 ㅍ/ㅌ 과 마침표/물음표는 같은 점자 셀(ASCII ``4`` / ``8``).
+# 점역: 두 음절 이하 한글 어절 뒤 ``.``·``?`` 앞에 공백을 넣어 종성과 구분.
+# 역점역: 공백 없이 짧은 어절(≤2) 뒤 ``4`` → 종성 ㅍ,
+#         긴 어절(≥3) 또는 공백 뒤 ``4`` → 마침표.
+#         ``8``은 어절 길이 + 흔한 ㅌ받침 화이트리스트(보조)로 구분.
 _PERIOD_JONG_DISAMBIG_MAX_SYL = 2
+_JONG_PUNCT_DISAMBIG_MAX_SYL = _PERIOD_JONG_DISAMBIG_MAX_SYL
 
 _PUNCT_TO_ASCII: dict[str, str] = {
     ".": "4",
@@ -119,6 +124,16 @@ _PUNCT_TO_ASCII: dict[str, str] = {
     "※": "99",
     "ⓒ": "7c7",
 }
+
+# 동그라미 숨김표 (○×n → _0…0l). 규: 4-5-6 + (3-5-6)×개수 + 1-2-3
+_HIDE_CIRCLE_CHARS = frozenset("○〇◯")
+
+
+def _encode_hide_circles(count: int) -> str:
+    if count < 1:
+        return ""
+    return HIDE_MARK_OPEN + (HIDE_MARK_UNIT * count) + HIDE_MARK_CLOSE
+
 
 _CIRCLED_DIGIT_CELL = {
     "①": "a",
@@ -451,6 +466,14 @@ def _hangul_body_to_ascii_masked(text: str) -> tuple[str, list[bool]]:
         if matched_word:
             continue
 
+        if ch in _HIDE_CIRCLE_CHARS:
+            j = i
+            while j < n and text[j] in _HIDE_CIRCLE_CHARS:
+                j += 1
+            emit(_encode_hide_circles(j - i))
+            i = j
+            continue
+
         if ch in _CIRCLED_DIGIT_CELL:
             emit("7#" + _CIRCLED_DIGIT_CELL[ch] + "7")
             i += 1
@@ -576,10 +599,23 @@ def _hangul_body_to_ascii_masked(text: str) -> tuple[str, list[bool]]:
             if ch == ".":
                 syl = _trailing_hangul_syllables(text, i)
                 if (
-                    1 <= syl <= _PERIOD_JONG_DISAMBIG_MAX_SYL
+                    1 <= syl <= _JONG_PUNCT_DISAMBIG_MAX_SYL
                     and (not out or out[-1] != " ")
                 ):
                     emit(" ")
+                emit(_PUNCT_TO_ASCII[ch])
+                i += 1
+                continue
+            if ch == "?":
+                syl = _trailing_hangul_syllables(text, i)
+                if (
+                    1 <= syl <= _JONG_PUNCT_DISAMBIG_MAX_SYL
+                    and (not out or out[-1] != " ")
+                ):
+                    emit(" ")
+                emit(_PUNCT_TO_ASCII[ch])
+                i += 1
+                continue
             emit(_PUNCT_TO_ASCII[ch])
             i += 1
             continue
