@@ -210,6 +210,32 @@ def test_circled_hangul_and_underline_emphasis():
     assert hangul_text_to_ascii("㉠<u>차자 표기</u>") == "7=a7,-;<. d+`o-'"
 
 
+def test_circled_hangul_syllables_ga_to_ha():
+    """㉮–㉻ → 드러냄+음절. ㉮(가)=7$7. 라틴 겹침 본문은 역점역이 ⓐ…를 우선."""
+    from korean_exam_braille.app.brf.reverse_translator import reverse_translate_line as r
+
+    assert hangul_text_to_ascii("㉮") == "7$7"
+    assert hangul_text_to_ascii("㉯") == "7c7"
+    assert hangul_text_to_ascii("㉰") == "7i7"
+    assert hangul_text_to_ascii("㉱") == '7"<7'
+    assert hangul_text_to_ascii("㉳") == "7^7"
+    assert hangul_text_to_ascii("㉵") == "7<7"
+    assert hangul_text_to_ascii("㉶") == "7.7"
+    assert hangul_text_to_ascii("㉷") == "7;<7"
+    assert r("7$7") == "㉮"
+    assert r('7"<7') == "㉱"
+    assert r("7^7") == "㉳"
+    assert r("7<7") == "㉵"
+    assert r("7.7") == "㉶"
+    assert r("7;<7") == "㉷"
+    # 나/ⓒ 충돌 — 역점역은 기존 ⓒ 유지
+    assert r("7c7") == "ⓒ"
+    sentence = "다음날 ‘갑’은 ㉮  조건으로"
+    assert "7$7" in hangul_text_to_ascii(sentence)
+    assert "㉮" in r(hangul_text_to_ascii(sentence))
+    assert hangul_text_to_ascii("㉮") != ""
+
+
 def test_circled_latin_labeled_underline_still_roundtrips():
     """인라인 ⓐ<u>…</u> 점역·역점역 (PDF 직렬화 기본도 인라인)."""
     assert hangul_text_to_ascii("ⓐ<u>오</u>은") == "7a7,-u-'z"

@@ -176,6 +176,24 @@ _CIRCLED_HANGUL_JAMO: dict[str, str] = {
     "㉭": "ㅎ",
 }
 
+# ㉮–㉻ (원문자 가·나·다·…) → 드러냄+해당 음절 점형 (㉮→7$7)
+_CIRCLED_HANGUL_SYLLABLE: dict[str, str] = {
+    "㉮": "가",
+    "㉯": "나",
+    "㉰": "다",
+    "㉱": "라",
+    "㉲": "마",
+    "㉳": "바",
+    "㉴": "사",
+    "㉵": "아",
+    "㉶": "자",
+    "㉷": "차",
+    "㉸": "카",
+    "㉹": "타",
+    "㉺": "파",
+    "㉻": "하",
+}
+
 _EMPHASIS_OPEN = ",-"
 _EMPHASIS_CLOSE = "-'"
 _U_TAG = re.compile(r"<u>(.*?)</u>", re.DOTALL)
@@ -293,7 +311,7 @@ def hangul_text_to_ascii(text: str) -> str:
     한자는 공식 실무대로 음독 한글로 바꾸고, 한글·한자 병기는 한자를 생략한다
     (한자 전환 표는 쓰지 않음).
     ``<u>…</u>`` 밑줄 구간은 강조부호 ``,-`` … ``-'`` 로 감싼다.
-    ㉠–㉭ 은 드러냄+자모(``7=a7`` …)로 점역한다.
+    ㉠–㉭ 은 드러냄+자모(``7=a7`` …), ㉮–㉻ 은 드러냄+음절(``7$7`` …)로 점역한다.
     ⓐ–ⓩ 는 드러냄+라틴(``7a7`` …)으로 점역한다 (참고 BRF ``70a7``/‘a’ 아님).
     박스 표선 행(``────`` 등)은 ``!333…4`` 표선으로 점역한다.
     그림 자리표시 ``[그림]`` 은 고정 점역(그림 생략)으로 바꾼다.
@@ -446,6 +464,14 @@ def _hangul_body_to_ascii_masked(text: str) -> tuple[str, list[bool]]:
         if ch in _CIRCLED_HANGUL_JAMO:
             jamo = _CIRCLED_HANGUL_JAMO[ch]
             body = JAMO_COMPAT_TO_ASCII.get(jamo)
+            if body:
+                emit("7" + body + "7")
+            i += 1
+            continue
+
+        if ch in _CIRCLED_HANGUL_SYLLABLE:
+            syl = _CIRCLED_HANGUL_SYLLABLE[ch]
+            body, _ = _hangul_body_to_ascii_masked(syl)
             if body:
                 emit("7" + body + "7")
             i += 1

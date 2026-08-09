@@ -59,6 +59,32 @@ _CLOSING_MULTI_PREFIXES = frozenset(
 
 _LATIN_LETTERS = frozenset("abcdefghijklmnopqrstuvwxyz")
 
+# 원문자 가–하 (㉮–㉻). 본문이 라틴 1글자(c/i/e…)와 겹치면 라틴 원문자(ⓒ…) 우선.
+_CIRCLED_HANGUL_SYL_ASCII: list[tuple[str, str]] = sorted(
+    [
+        ("$", "㉮"),  # 가
+        ("c", "㉯"),  # 나 — ⓒ 와 충돌, 역점역은 라틴 우선
+        ("i", "㉰"),  # 다 — ⓘ
+        ('"<', "㉱"),  # 라
+        ("e", "㉲"),  # 마 — ⓔ
+        ("^", "㉳"),  # 바
+        ("l", "㉴"),  # 사 — ⓛ
+        ("<", "㉵"),  # 아
+        (".", "㉶"),  # 자
+        (";<", "㉷"),  # 차
+        ("f", "㉸"),  # 카 — ⓕ
+        ("h", "㉹"),  # 타 — ⓗ
+        ("d", "㉺"),  # 파 — ⓓ
+        ("j", "㉻"),  # 하 — ⓙ
+    ],
+    key=lambda kv: (-len(kv[0]), kv[0]),
+)
+_CIRCLED_HANGUL_SYL_SAFE = [
+    (body, ink)
+    for body, ink in _CIRCLED_HANGUL_SYL_ASCII
+    if not (len(body) == 1 and body in _LATIN_LETTERS)
+]
+
 # 시험 지문 범위: 82#a`9#c;0 → [1~3] (normalize 후 ` → @)
 _PASSAGE_RANGE_ASCII = re.compile(
     r"82#([a-jA-J]+)[@`]9#([a-jA-J]+);0(4)?"
@@ -243,11 +269,12 @@ def _match_punct(chars: list[str], i: int) -> tuple[str, int] | None:
 
 
 def _try_circled_digit(chars: list[str], i: int, out: list[str]) -> int | None:
-    """원문자 선택지 번호·원문자 라틴.
+    """원문자 선택지 번호·원문자 라틴·원문자 한글 음절.
 
     - 관례 A: 7#a7 … 7#e7 → ①…⑤ (정방향 인코딩)
     - 관례 B: #1 … #5 (⠼⠂…⠼⠢) → ①…⑤ (참고 시험지 BRF)
-    - 관례 C: 7a7 … 7z7 → ⓐ…ⓩ (수표 없는 드러냄+글자)
+    - 관례 C: 7$7 … (가–하, 라틴 1글자와 안 겹치는 본문) → ㉮…㉻
+    - 관례 D: 7a7 … 7z7 → ⓐ…ⓩ (수표 없는 드러냄+글자)
     """
     # A) 7#a7
     if _slice_norm(chars, i, 2) == "7#":
@@ -261,7 +288,20 @@ def _try_circled_digit(chars: list[str], i: int, out: list[str]) -> int | None:
         out.append("①②③④⑤"["abcde".index(dig)])
         return i + 4
 
-    # C) 7a7 … 7z7 → ⓐ…ⓩ (①용 7#a7 보다 뒤에 두어 # 있는 쪽을 우선)
+    # C) 드러냄+한글 음절+드러냄 → ㉮…㉻ (라틴 1글자 본문은 D에 양보)
+    if _norm_cell(chars[i]) == "7":
+        for body, ink in _CIRCLED_HANGUL_SYL_SAFE:
+            nbody = len(body)
+            if i + nbody + 1 >= len(chars):
+                continue
+            if _slice_norm(chars, i + 1, nbody) != body:
+                continue
+            if _norm_cell(chars[i + 1 + nbody]) != "7":
+                continue
+            out.append(ink)
+            return i + nbody + 2
+
+    # D) 7a7 … 7z7 → ⓐ…ⓩ (①용 7#a7 보다 뒤에 두어 # 있는 쪽을 우선)
     if _norm_cell(chars[i]) == "7" and i + 2 < len(chars):
         mid = _norm_cell(chars[i + 1])
         if mid in "abcdefghijklmnopqrstuvwxyz" and _norm_cell(chars[i + 2]) == "7":
