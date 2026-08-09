@@ -21,6 +21,77 @@ def _seq(ascii_text: str, node_type: str, node_id: str = "n1") -> BrailleSequenc
     )
 
 
+def test_wrap_reopens_roman_sign_on_continuation():
+    """영문 줄바꿈 시 이어지는 줄에 로마자표(0)를 다시 넣는다."""
+    from korean_exam_braille.app.braille.translator import (
+        hangul_text_to_ascii_with_roman_mask,
+    )
+    from korean_exam_braille.app.brf.reverse_translator import reverse_translate_line
+    from korean_exam_braille.app.layout.engine import _wrap_ascii
+
+    ascii_text, mask = hangul_text_to_ascii_with_roman_mask(
+        "CIF(Cost, Insurance and Freight), DDP(Delivered Duty Paid)"
+    )
+    lines = _wrap_ascii(
+        ascii_text, 32, first_indent=0, cont_indent=0, roman_mask=mask
+    )
+    assert len(lines) >= 2
+    cont = next(ln.lstrip() for ln in lines[1:] if ln.strip())
+    assert cont.startswith("0"), cont
+    rev = " ".join(
+        reverse_translate_line(ln) for ln in lines if ln.strip()
+    ).replace(" ", "")
+    assert "Freight" in rev or "freight" in rev.lower()
+    assert "사캐마둔털" not in rev
+
+
+def test_wrap_does_not_mark_hangul_after_exw_acronym():
+    """EXW 같은 대문자 약어 뒤 한글(또는)에 로마자표를 붙이지 않는다."""
+    from korean_exam_braille.app.braille.translator import (
+        hangul_text_to_ascii_with_roman_mask,
+    )
+    from korean_exam_braille.app.brf.reverse_translator import reverse_translate_line
+    from korean_exam_braille.app.layout.engine import _wrap_ascii
+
+    ascii_text, mask = hangul_text_to_ascii_with_roman_mask(
+        "용된다. 어떤 물품을 EXW 또는 FOB 조건으로"
+    )
+    assert "0,e,x,w4" in ascii_text
+    assert "0,f,o,b4" in ascii_text
+    lines = _wrap_ascii(
+        ascii_text, 28, first_indent=0, cont_indent=0, roman_mask=mask
+    )
+    cont = next(
+        ln for ln in lines if "iucz" in ln or "또는" in reverse_translate_line(ln)
+    )
+    assert not cont.lstrip().startswith("0,iucz"), cont
+    assert "또는" in reverse_translate_line(cont)
+    assert "Iucz" not in reverse_translate_line(cont)
+
+
+def test_wrap_reopens_roman_between_acronyms():
+    """약어만 이어져도 줄바꿈 뒤에는 로마자표를 다시 넣는다."""
+    from korean_exam_braille.app.braille.translator import (
+        hangul_text_to_ascii_with_roman_mask,
+    )
+    from korean_exam_braille.app.brf.reverse_translator import reverse_translate_line
+    from korean_exam_braille.app.layout.engine import _wrap_ascii
+
+    ascii_text, mask = hangul_text_to_ascii_with_roman_mask("EXW FOB CIF DDP")
+    lines = _wrap_ascii(
+        ascii_text, 8, first_indent=0, cont_indent=0, roman_mask=mask
+    )
+    assert len(lines) >= 2
+    for ln in lines:
+        s = ln.lstrip()
+        if not s:
+            continue
+        # 각 약어 줄은 로마자표로 시작
+        assert s.startswith("0"), (ln, reverse_translate_line(ln))
+    rev = " ".join(reverse_translate_line(ln) for ln in lines if ln.strip())
+    assert "EXW" in rev and "FOB" in rev and "CIF" in rev and "DDP" in rev
+
+
 def test_wrap_and_choice_indent():
     engine = RuleBrailleLayoutEngine()
     profile = LayoutProfile(cells_per_line=10, choice_indent=2, lines_per_page=26)

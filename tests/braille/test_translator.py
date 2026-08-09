@@ -48,7 +48,7 @@ def test_middot_has_single_space_on_both_sides():
     """가운뎃점은 원문 공백과 무관하게 앞뒤 한 칸으로 점역한다."""
     left = hangul_text_to_ascii("국어")
     right = hangul_text_to_ascii("영어")
-    expected = f"{left} 1; {right}"
+    expected = f'{left} "2 {right}'
     assert hangul_text_to_ascii("국어·영어") == expected
     assert hangul_text_to_ascii("국어 · 영어") == expected
     assert hangul_text_to_ascii("국어  ·  영어") == expected
@@ -57,14 +57,25 @@ def test_middot_has_single_space_on_both_sides():
 
 def test_hangul_araea_and_legacy_placeholder_are_middot():
     """표 빈칸 ㆍ 와 옛 자리표시 =?(⠿⠹)는 가운뎃점으로 본다."""
-    assert hangul_text_to_ascii("ㆍ") == "1;"
-    assert hangul_text_to_ascii("가  ㆍ  나") == f"{hangul_text_to_ascii('가')} 1; {hangul_text_to_ascii('나')}"
+    assert hangul_text_to_ascii("ㆍ") == '"2'
+    assert hangul_text_to_ascii("가  ㆍ  나") == (
+        f'{hangul_text_to_ascii("가")} "2 {hangul_text_to_ascii("나")}'
+    )
     assert reverse_translate_line("=?") == "·"
     assert reverse_translate_line(" =? ") == " · "
     assert reverse_translate_line(hangul_text_to_ascii("ㆍ")) == "·"
     assert "옹" not in reverse_translate_line("=?")
     assert "억" not in reverse_translate_line("=?")
 
+
+def test_ilchi_jong_rieul_choseong_chieut_not_middot():
+    """일치: 종성 ㄹ(1)+초성 ㅊ(;) 은 가운뎃점(\"2)이 아니다."""
+    assert hangul_text_to_ascii("일치") == "o1;o"
+    assert reverse_translate_line("o1;o") == "일치"
+    assert reverse_translate_line(hangul_text_to_ascii("일치하지")) == "일치하지"
+    assert "·" not in reverse_translate_line(hangul_text_to_ascii("일치하지"))
+    # 가운뎃점은 5점+2-3점
+    assert reverse_translate_line('"2') == "·"
 
 def test_bullet_operator_is_dot5_period_with_trailing_space():
     """항목 불릿 ∙ = ⠐⠲(\"4) + 뒤 공백. 역점역은 ∙ 로 복원."""

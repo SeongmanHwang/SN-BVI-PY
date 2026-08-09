@@ -28,6 +28,7 @@ from korean_exam_braille.app.common.korean_tables import (
     JUNGSEONG,
     JUNGSEONG_DIGRAPHS,
     LETTER_SIGN,
+    ROMAN_END_SIGN,
     NUMBER_MAP,
     NUMBER_SIGN,
     ON_SIGN,
@@ -223,9 +224,8 @@ def _match_punct(chars: list[str], i: int) -> tuple[str, int] | None:
     `82`는 지문 범위(82#…@9#…;0)일 때만 대괄호로 보지 않는다.
     `82#c…;0` ([3점] 등)은 여는 `[` 로 처리한다.
 
-    대괄호 `;0`(]) 우선: 가운뎃점 ``1;`` 과 겹치는 ``1;0`` 은
-    종성 ㄹ(``1``)+닫는 대괄호(``;0``)로 나누도록 ``1;`` 일치를 포기한다.
-    (예: ``82m"oe1;0`` → ``[우리말]``, 잘못되면 ``[우리마·<U:0>``)
+    가운뎃점은 ``"2``(⠐⠆, 5+2-3). 구관례 ``1;``(⠂⠰)는 쓰지 않음 —
+    그 셀열은 종성 ㄹ+초성 ㅊ(예: 일치)이다.
 
     겹받침 ``18``(ㄾ) vs 여는 대괄호 ``82``: 뒤에 ``;0`` 짝이 있으면
     종성 ㄹ + ``[`` 로 나눈다 (``…182…;0``).
@@ -238,9 +238,6 @@ def _match_punct(chars: list[str], i: int) -> tuple[str, int] | None:
             rest = normalize_brf_ascii("".join(chars[i:]))
             if _PASSAGE_RANGE_ASCII.match(rest):
                 continue
-        # 1;0 → · + <U:0> 이 아니라 (종성)ㄹ + ]
-        if key == "1;" and _slice_norm(chars, i, 3) == "1;0":
-            continue
         return ink, len(key)
     return None
 
@@ -637,7 +634,7 @@ def _try_roman_mode(chars: list[str], i: int, out: list[str]) -> int | None:
     - `,,` = 단어 대문자(공백·구두점 전까지)
     - 공백·(,)|,. 등은 ENG 유지 (뒤에 로마자표/글자가 이어질 때)
     - 대문자 약어 직후 한글 조사 셀은 ENG 종료(출력 없음)
-    - 모드 종료 부호를 마침표로 내보내지 않음
+    - 로마자종료표(4/⠲)는 마침표로 내보내지 않고 모드만 종료
     """
     if _norm_cell(chars[i]) != ROMAN_SIGN:
         return None
@@ -746,15 +743,16 @@ def _try_roman_mode(chars: list[str], i: int, out: list[str]) -> int | None:
             i += 1
             continue
 
+        # 로마자종료표(⠲) — 마침표(동일 셀)로 출력하지 않음
+        if n == ROMAN_END_SIGN:
+            i += 1
+            break
+
         # 단순 영문 구두점
-        if n in PUNCT_SINGLE and n in {"1", "4", "8", "6"}:
+        if n in PUNCT_SINGLE and n in {"1", "8", "6"}:
             # 쉼표는 “ 셀과 충돌 — eng에서는 1
             if n == "1":
                 out.append(",")
-                i += 1
-                continue
-            if n == "4":
-                out.append(".")
                 i += 1
                 continue
             # 8/? 는 eng 질의에만 — 기본적으로 종료
@@ -817,7 +815,7 @@ def reverse_translate_line(raw_ascii: str) -> str:
             i = jumped
             continue
 
-        # 2) 대괄호 우선 (;0 / 82) — 가운뎃점 1; 등보다 먼저 닫는 ] 확보
+        # 2) 대괄호 우선 (;0 / 82) — 다른 복합부호보다 먼저 닫는 ] 확보
         if _slice_norm(chars, i, 2) == ";0":
             out.append("]")
             i += 2

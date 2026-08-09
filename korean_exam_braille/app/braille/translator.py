@@ -22,6 +22,7 @@ from korean_exam_braille.app.common.korean_tables import (
     JUNGSEONG_DIGRAPHS,
     NUMBER_MAP,
     NUMBER_SIGN,
+    ROMAN_END_SIGN,
     ROMAN_SIGN,
     TENSED_MAP,
     TENSED_PREFIX,
@@ -104,8 +105,8 @@ _PUNCT_TO_ASCII: dict[str, str] = {
     "<": "78",
     ">": "07",
     "…": "444",
-    "·": "1;",
-    "ㆍ": "1;",  # 한글 방점/표 빈칸 관례 → 가운뎃점과 동일
+    "·": '"2',  # 가운뎃점 ⠐⠆ (5 + 2-3). 旧 1;(⠂⠰)는 종성 ㄹ+초성 ㅊ과 충돌
+    "ㆍ": '"2',  # 한글 방점/표 빈칸 관례 → 가운뎃점과 동일
     "∙": '"4',  # 항목 불릿 ⠐⠲ — 점역 시 뒤에 공백 필수
     "～": "@9",
     "~": "@9",
@@ -297,67 +298,135 @@ def hangul_text_to_ascii(text: str) -> str:
     박스 표선 행(``────`` 등)은 ``!333…4`` 표선으로 점역한다.
     그림 자리표시 ``[그림]`` 은 고정 점역(그림 생략)으로 바꾼다.
     """
+    ascii_text, _mask = hangul_text_to_ascii_with_roman_mask(text)
+    return ascii_text
+
+
+def hangul_text_to_ascii_with_roman_mask(text: str) -> tuple[str, list[bool]]:
+    """점역 ASCII와, 각 ASCII 문자가 로마자(라틴) 구간인지 마스크.
+
+    마스크는 레이아웃 줄바꿈 시 «새 줄이 영어 구간으로 시작하는데
+    로마자표가 빠졌는지» 판별에 쓴다. 개행 문자는 False.
+    """
     text = replace_opaque_with_slash(text)
     text = replace_hanja_with_reading(text)
-    chunks: list[str] = []
-    for line in text.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
+    ascii_parts: list[str] = []
+    mask_parts: list[list[bool]] = []
+    lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    for i, line in enumerate(lines):
+        if i:
+            ascii_parts.append("\n")
+            mask_parts.append([False])
         if line.strip() == FIGURE_INK:
-            chunks.append(FIGURE_BRAILLE_ASCII)
+            ascii_parts.append(FIGURE_BRAILLE_ASCII)
+            mask_parts.append([False] * len(FIGURE_BRAILLE_ASCII))
         elif _RULE_LINE.match(line):
-            chunks.append(_TABLE_RULE_ASCII)
+            ascii_parts.append(_TABLE_RULE_ASCII)
+            mask_parts.append([False] * len(_TABLE_RULE_ASCII))
         else:
-            chunks.append(_encode_line_with_emphasis(line))
-    return "\n".join(chunks)
+            a, m = _encode_line_with_emphasis_masked(line)
+            ascii_parts.append(a)
+            mask_parts.append(m)
+    joined = "".join(ascii_parts)
+    mask: list[bool] = []
+    for part in mask_parts:
+        mask.extend(part)
+    assert len(mask) == len(joined)
+    return joined, mask
 
 
 def _encode_line_with_emphasis(line: str) -> str:
     """밑줄 태그를 강조 점자로 바꾼 뒤 일반 점역."""
-    parts: list[str] = []
+    ascii_text, _mask = _encode_line_with_emphasis_masked(line)
+    return ascii_text
+
+
+def _encode_line_with_emphasis_masked(line: str) -> tuple[str, list[bool]]:
+    """밑줄 태그를 강조 점자로 바꾼 뒤 일반 점역 + 로마 마스크."""
+    ascii_parts: list[str] = []
+    mask: list[bool] = []
     cursor = 0
     for m in _U_TAG.finditer(line):
-        parts.append(_encode_line(line[cursor : m.start()]))
-        inner = m.group(1)
-        parts.append(_EMPHASIS_OPEN + _encode_line(inner) + _EMPHASIS_CLOSE)
+        a, mk = _encode_line_masked(line[cursor : m.start()])
+        ascii_parts.append(a)
+        mask.extend(mk)
+        ascii_parts.append(_EMPHASIS_OPEN)
+        mask.extend([False] * len(_EMPHASIS_OPEN))
+        a, mk = _encode_line_masked(m.group(1))
+        ascii_parts.append(a)
+        mask.extend(mk)
+        ascii_parts.append(_EMPHASIS_CLOSE)
+        mask.extend([False] * len(_EMPHASIS_CLOSE))
         cursor = m.end()
-    parts.append(_encode_line(line[cursor:]))
-    return "".join(parts)
+    a, mk = _encode_line_masked(line[cursor:])
+    ascii_parts.append(a)
+    mask.extend(mk)
+    return "".join(ascii_parts), mask
 
 
 def _encode_line(line: str) -> str:
     """지문 범위·문항 번호는 점자 ASCII로 직접 넣고, 나머지 묵자만 점역."""
-    parts: list[str] = []
+    ascii_text, _mask = _encode_line_masked(line)
+    return ascii_text
+
+
+def _encode_line_masked(line: str) -> tuple[str, list[bool]]:
+    """지문 범위·문항 번호 + 본문 점역과 로마 마스크."""
+    ascii_parts: list[str] = []
+    mask: list[bool] = []
     cursor = 0
 
     m_q = _QUESTION_START.match(line)
     if m_q:
-        parts.append(_num_braille(int(m_q.group(1))) + "4 ")
+        piece = _num_braille(int(m_q.group(1))) + "4 "
+        ascii_parts.append(piece)
+        mask.extend([False] * len(piece))
         cursor = m_q.end()
 
     for m in PASSAGE_RANGE.finditer(line, cursor):
-        parts.append(_hangul_body_to_ascii(line[cursor : m.start()]))
-        parts.append(_encode_passage_range(m))
+        a, mk = _hangul_body_to_ascii_masked(line[cursor : m.start()])
+        ascii_parts.append(a)
+        mask.extend(mk)
+        piece = _encode_passage_range(m)
+        ascii_parts.append(piece)
+        mask.extend([False] * len(piece))
         cursor = m.end()
 
-    parts.append(_hangul_body_to_ascii(line[cursor:]))
-    return "".join(parts)
+    a, mk = _hangul_body_to_ascii_masked(line[cursor:])
+    ascii_parts.append(a)
+    mask.extend(mk)
+    return "".join(ascii_parts), mask
 
 
 def _hangul_body_to_ascii(text: str) -> str:
+    ascii_text, _mask = _hangul_body_to_ascii_masked(text)
+    return ascii_text
+
+
+def _hangul_body_to_ascii_masked(text: str) -> tuple[str, list[bool]]:
     out: list[str] = []
+    mask: list[bool] = []
+
+    def emit(piece: str, *, roman: bool = False) -> None:
+        if not piece:
+            return
+        out.append(piece)
+        mask.extend([roman] * len(piece))
+
     i = 0
     n = len(text)
     while i < n:
         ch = text[i]
 
         if ch in " \t":
-            out.append(" ")
+            emit(" ")
             i += 1
             continue
 
         matched_word = False
         for hangul, cells in _WORD_ABBREV_REV:
             if text.startswith(hangul, i):
-                out.append(cells)
+                emit(cells)
                 i += len(hangul)
                 matched_word = True
                 break
@@ -365,23 +434,20 @@ def _hangul_body_to_ascii(text: str) -> str:
             continue
 
         if ch in _CIRCLED_DIGIT_CELL:
-            # 원문자 번호: 7#a7 … (일반 수표 #a 와 구분)
-            out.append("7#" + _CIRCLED_DIGIT_CELL[ch] + "7")
+            emit("7#" + _CIRCLED_DIGIT_CELL[ch] + "7")
             i += 1
             continue
 
         if ch in _CIRCLED_LATIN_CELL:
-            # ⓐ–ⓔ: 드러냄+라틴 글자 (7a7 …). ①의 7#a7·로마자표 0a 와 구분.
-            out.append("7" + _CIRCLED_LATIN_CELL[ch] + "7")
+            emit("7" + _CIRCLED_LATIN_CELL[ch] + "7")
             i += 1
             continue
 
         if ch in _CIRCLED_HANGUL_JAMO:
-            # ㉠–㉭: 드러냄+온표 자모 (참고 BRF 7=a7 …). ①용 7#a7 과 구분.
             jamo = _CIRCLED_HANGUL_JAMO[ch]
             body = JAMO_COMPAT_TO_ASCII.get(jamo)
             if body:
-                out.append("7" + body + "7")
+                emit("7" + body + "7")
             i += 1
             continue
 
@@ -391,10 +457,7 @@ def _hangul_body_to_ascii(text: str) -> str:
             while i < n and text[i].isdigit():
                 digits.append(_DIGIT_TO_ASCII[text[i]])
                 i += 1
-            out.append(NUMBER_SIGN + "".join(digits))
-            # 수표 구간 종료: 뒤에 글자가 이어지면 빈칸 하나.
-            # 이미 공백·구두점이면 생략. [3점] 등 대괄호 안 점수 표기는
-            # 참고 BRF(82#c.s5;0)처럼 숫자·단위를 붙인다.
+            emit(NUMBER_SIGN + "".join(digits))
             if i < n and text[i] not in " \t":
                 nxt = text[i]
                 after_open_bracket = digit_start > 0 and text[digit_start - 1] in "[【"
@@ -403,44 +466,48 @@ def _hangul_body_to_ascii(text: str) -> str:
                     attach_punct
                     or (after_open_bracket and _is_hangul(nxt))
                 ):
-                    out.append(" ")
+                    emit(" ")
             continue
 
         if ("A" <= ch <= "Z") or ("a" <= ch <= "z"):
-            # 로마자(라틴)는 항상 로마자표(⠴/0)를 앞에 붙인다.
-            # 한글 약자(은=z 등)와 셀이 겹쳐도 표지로 구분한다.
-            out.append(ROMAN_SIGN)
+            # 로마자 구간 전체(표지·글자·영문 내 공백/괄호/쉼표)를 마스크 True.
+            # 구간이 끝난 뒤 비로마가 이어지면 로마자종료표(4/⠲)를 붙인다.
+            emit(ROMAN_SIGN, roman=True)
             while i < n:
                 c = text[i]
                 if ("A" <= c <= "Z") or ("a" <= c <= "z"):
-                    out.append("," + c.lower() if "A" <= c <= "Z" else c)
+                    emit("," + c.lower() if "A" <= c <= "Z" else c, roman=True)
                     i += 1
                     continue
                 if c == " " and i + 1 < n and (
                     ("A" <= text[i + 1] <= "Z") or ("a" <= text[i + 1] <= "z")
                 ):
-                    out.append(" ")
+                    emit(" ", roman=True)
                     i += 1
                     continue
                 if c in "()" and c in _PUNCT_TO_ASCII:
-                    out.append(_PUNCT_TO_ASCII[c])
+                    emit(_PUNCT_TO_ASCII[c], roman=True)
                     i += 1
                     continue
-                if c == "," and i + 1 < n and (
-                    ("A" <= text[i + 1] <= "Z") or ("a" <= text[i + 1] <= "z")
-                ):
-                    # 영문 구간 쉼표는 2점(ASCII 1). 한글 쉼표(")와 구분.
-                    out.append("1")
-                    i += 1
-                    continue
+                if c == ",":
+                    j = i + 1
+                    while j < n and text[j] in " \t":
+                        j += 1
+                    if j < n and (
+                        ("A" <= text[j] <= "Z") or ("a" <= text[j] <= "z")
+                    ):
+                        emit("1", roman=True)
+                        i += 1
+                        continue
+                    break
                 break
+            if i < n:
+                emit(ROMAN_END_SIGN)
             continue
 
         decomp = decompose_hangul(ch)
         if decomp is not None:
             cho, jung, jong = decomp
-            # 가류 약자 직후가 ㅇ-시작 음절(음, 였, 을…)이면 ㅏ를 명시해
-            # 자음→즘, 하였 모호성을 줄인다: 자음=.<[5, 하였=j<:/
             next_de = decompose_hangul(text[i + 1]) if i + 1 < n else None
             if (
                 jung == "ㅏ"
@@ -451,72 +518,70 @@ def _hangul_body_to_ascii(text: str) -> str:
             ):
                 cho_ascii = _CHO_TO_ASCII.get(cho)
                 if cho_ascii is not None:
-                    out.append(cho_ascii + "<")
+                    emit(cho_ascii + "<")
                 else:
-                    out.append(_encode_syllable(cho, jung, jong))
+                    emit(_encode_syllable(cho, jung, jong))
             else:
-                out.append(_encode_syllable(*decomp))
+                emit(_encode_syllable(*decomp))
             i += 1
             continue
 
         if ch in _PUNCT_TO_ASCII:
-            # 가운뎃점(·/ㆍ)은 묵자 원문의 공백 유무와 관계없이 양옆을 한 칸 띄운다.
-            # 줄 처음·끝에서는 불필요한 선행·후행 공백을 만들지 않는다.
             if ch in {"·", "ㆍ"}:
                 while out and out[-1] == " ":
                     out.pop()
+                    mask.pop()
                 if out:
-                    out.append(" ")
-                out.append(_PUNCT_TO_ASCII[ch])
+                    emit(" ")
+                emit(_PUNCT_TO_ASCII[ch])
                 i += 1
                 while i < n and text[i] in " \t":
                     i += 1
                 if i < n:
-                    out.append(" ")
+                    emit(" ")
                 continue
-            # 항목 불릿(∙) = ⠐⠲("4). 뒤 공백을 항상 둔다.
             if ch == "∙":
-                out.append(_PUNCT_TO_ASCII[ch])
+                emit(_PUNCT_TO_ASCII[ch])
                 i += 1
                 while i < n and text[i] in " \t":
                     i += 1
-                out.append(" ")
+                emit(" ")
                 continue
-            # 마침표(4) ↔ 종성 ㅍ(4): 두 음절 이하 어절 뒤면 앞에 공백.
             if ch == ".":
                 syl = _trailing_hangul_syllables(text, i)
                 if (
                     1 <= syl <= _PERIOD_JONG_DISAMBIG_MAX_SYL
                     and (not out or out[-1] != " ")
                 ):
-                    out.append(" ")
-            out.append(_PUNCT_TO_ASCII[ch])
+                    emit(" ")
+            emit(_PUNCT_TO_ASCII[ch])
             i += 1
             continue
 
-        # 호환 자모(ㄱ, ㅏ, ㅣ …) — 온표 + 자모 점형
         if ch in JAMO_COMPAT_TO_ASCII:
-            out.append(JAMO_COMPAT_TO_ASCII[ch])
+            emit(JAMO_COMPAT_TO_ASCII[ch])
             i += 1
             continue
 
         if 0x3131 <= ord(ch) <= 0x318E:
-            # 표에 없는 호환 자모는 온표만 남기지 않고 명시적으로 표시
-            out.append("=?")
+            emit("=?")
             i += 1
             continue
 
         i += 1
 
-    return "".join(out)
+    return "".join(out), mask
 
 
 class TableBrailleTranslator:
     """korean_tables 기반 정방향 점역."""
 
     def translate_text(self, text: str) -> BrailleSequence:
-        ascii_text = hangul_text_to_ascii(text)
+        ascii_text, roman_mask = hangul_text_to_ascii_with_roman_mask(text)
         flat_ascii = ascii_text.replace("\r\n", "\n").replace("\r", "\n")
+        if "\r" in ascii_text:
+            # mask는 flat 과 길이가 같도록 유지 (위 replace가 길이를 바꾸지 않음)
+            pass
         cell_list: list[int] = []
         for line in flat_ascii.split("\n"):
             cell_list.extend(_ascii_to_cells(line))
@@ -526,13 +591,17 @@ class TableBrailleTranslator:
                 token_type="text",
                 cells=cell_list,
                 rule_id="table.hangul",
-                metadata={"ascii": flat_ascii},
+                metadata={"ascii": flat_ascii, "roman_mask": roman_mask},
             )
         ]
         return BrailleSequence(
             source_node_id="",
             tokens=tokens,
-            metadata={"translator": "TableBrailleTranslator", "ascii": flat_ascii},
+            metadata={
+                "translator": "TableBrailleTranslator",
+                "ascii": flat_ascii,
+                "roman_mask": roman_mask,
+            },
         )
 
     def translate_node(self, node: ExamNode) -> BrailleSequence:

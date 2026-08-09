@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from korean_exam_braille.app.braille.models import BrailleSequence
 from korean_exam_braille.app.brf.ascii_braille import ascii_char_to_dots
+from korean_exam_braille.app.common.korean_tables import ROMAN_SIGN
 from korean_exam_braille.app.layout.models import (
     BrailleDocument,
     BrailleLine,
@@ -26,6 +27,26 @@ def _sequence_ascii(seq: BrailleSequence) -> str:
     return "".join(parts)
 
 
+def _sequence_roman_mask(seq: BrailleSequence, ascii_text: str) -> list[bool] | None:
+    raw = seq.metadata.get("roman_mask")
+    if isinstance(raw, list) and len(raw) == len(ascii_text):
+        return [bool(x) for x in raw]
+    if seq.tokens:
+        parts: list[bool] = []
+        for token in seq.tokens:
+            m = token.metadata.get("roman_mask")
+            a = token.metadata.get("ascii")
+            if isinstance(m, list) and isinstance(a, str) and len(m) == len(a):
+                parts.extend(bool(x) for x in m)
+            elif isinstance(a, str):
+                parts.extend([False] * len(a))
+            else:
+                parts.extend([False] * len(token.source_text))
+        if len(parts) == len(ascii_text):
+            return parts
+    return None
+
+
 def _indent_for(node_type: str | None, profile: LayoutProfile) -> int:
     # Header는 translator가 이미 들여쓰기·가운데 패딩함
     if node_type == "Header":
@@ -43,36 +64,65 @@ def _wrap_ascii(
     *,
     first_indent: int,
     cont_indent: int = 0,
+    roman_mask: list[bool] | None = None,
 ) -> list[str]:
-    """ASCII 셀 단위 줄바꿈. 첫 줄만 first_indent, 이어서 cont_indent."""
+    """ASCII 셀 단위 줄바꿈. 첫 줄만 first_indent, 이어서 cont_indent.
+
+    ``roman_mask[i]`` 가 True 인 위치에서 새 줄이 시작되는데 로마자표(0)가
+    없으면 앞에 ``0`` 을 넣는다. (영어 구간만 마스크됨 — 한글 된소리 제외)
+    """
     if width < 1:
         width = 1
     first_indent = max(0, min(first_indent, width - 1))
     cont_indent = max(0, min(cont_indent, width - 1))
+    if roman_mask is not None and len(roman_mask) != len(text):
+        roman_mask = None
+
     lines: list[str] = []
-    for raw in text.splitlines() or [""]:
+    abs_pos = 0
+    raw_lines = text.splitlines() or [""]
+    for li, raw in enumerate(raw_lines):
+        if li:
+            abs_pos += 1  # newline
         if not raw:
             lines.append("")
             continue
-        remaining = raw
+        line_mask = (
+            roman_mask[abs_pos : abs_pos + len(raw)] if roman_mask is not None else None
+        )
+        i = 0
+        n = len(raw)
         line_no = 0
-        while remaining:
+        while i < n:
             indent = first_indent if line_no == 0 else cont_indent
             pad = " " * indent
             usable = width - indent
-            if len(remaining) <= usable:
-                lines.append(pad + remaining)
-                break
-            chunk = remaining[:usable]
-            sp = chunk.rfind(" ")
-            if sp > 0:
-                piece = chunk[:sp]
-                remaining = remaining[sp + 1 :]
+            need_roman = bool(
+                line_mask is not None
+                and i < n
+                and line_mask[i]
+                and not raw[i:].startswith(ROMAN_SIGN)
+            )
+            if need_roman:
+                usable = max(1, usable - len(ROMAN_SIGN))
+            rest = n - i
+            if rest <= usable:
+                piece = raw[i:n]
+                i = n
             else:
-                piece = chunk
-                remaining = remaining[usable:]
+                chunk = raw[i : i + usable]
+                sp = chunk.rfind(" ")
+                if sp > 0:
+                    piece = chunk[:sp]
+                    i = i + sp + 1
+                else:
+                    piece = chunk
+                    i = i + usable
+            if need_roman:
+                piece = ROMAN_SIGN + piece
             lines.append(pad + piece)
             line_no += 1
+        abs_pos += len(raw)
     return lines
 
 
@@ -172,6 +222,7 @@ class RuleBrailleLayoutEngine:
                         )
 
             ascii_text = _sequence_ascii(seq)
+            roman_mask = _sequence_roman_mask(seq, ascii_text)
             indent = _indent_for(node_type, prof)
             preformatted = bool(seq.metadata.get("preformatted"))
             # 미리 패딩된 Header는 줄 단위로만 넣고 wrap하지 않음
@@ -183,6 +234,7 @@ class RuleBrailleLayoutEngine:
                     prof.cells_per_line,
                     first_indent=indent,
                     cont_indent=0,
+                    roman_mask=roman_mask,
                 )
             for row in rows:
                 if len(row) > prof.cells_per_line:
