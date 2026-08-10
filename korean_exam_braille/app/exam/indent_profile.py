@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 from korean_exam_braille.app.exam.models import ExamNode
@@ -9,7 +10,9 @@ from korean_exam_braille.app.exam.passage_indent_config import (
     DEFAULT_PASSAGE_INDENT_GENRE_CONFIG,
     PassageIndentGenreConfig,
 )
-from korean_exam_braille.app.pdf.models import PdfDocumentStructure
+from korean_exam_braille.app.pdf.models import PdfDocumentStructure, PdfLine
+
+_LINE_COLUMN_RE = re.compile(r"-c(\d+)-")
 
 
 @dataclass(frozen=True)
@@ -46,6 +49,55 @@ def classify_indent_levels(
     base = min(x0s)
     eps = config.x0_epsilon
     return ["R" if x0 > base + eps else "L" for x0 in x0s]
+
+
+def column_key_for_line(
+    line_id: str,
+    x0: float,
+    *,
+    column_cut_x: float | None = None,
+) -> int:
+    """행의 단 키. line_id의 -cN- 우선, 없으면 cut 기준(0=좌, 1=우)."""
+    m = _LINE_COLUMN_RE.search(line_id or "")
+    if m:
+        return int(m.group(1))
+    if column_cut_x is not None:
+        return 0 if x0 < column_cut_x else 1
+    return 0
+
+
+def column_relative_x0s(
+    items: list[tuple[str, float]],
+    *,
+    column_cut_x: float | None = None,
+) -> list[float]:
+    """단별 min(x0)을 빼 상대 좌표로 만든다 (좌·우 혼입 PassageGroup용).
+
+    같은 단에만 속하는 입력이면 전역 min 기준과 동일한 L/R가 나온다.
+    """
+    if not items:
+        return []
+    keys = [
+        column_key_for_line(lid, x0, column_cut_x=column_cut_x) for lid, x0 in items
+    ]
+    bases: dict[int, float] = {}
+    for key, (_lid, x0) in zip(keys, items):
+        prev = bases.get(key)
+        if prev is None or x0 < prev:
+            bases[key] = x0
+    return [x0 - bases[key] for key, (_lid, x0) in zip(keys, items)]
+
+
+def column_relative_x0s_from_lines(
+    lines: list[PdfLine],
+    *,
+    column_cut_x: float | None = None,
+) -> list[float]:
+    """PdfLine 목록 → 단별 상대 x0."""
+    return column_relative_x0s(
+        [(ln.id, ln.bbox[0]) for ln in lines],
+        column_cut_x=column_cut_x,
+    )
 
 
 def indent_runs(levels: list[str]) -> list[tuple[str, int]]:
@@ -168,18 +220,34 @@ def _passage_group_x0s(
     *,
     line_x0: dict[str, float],
     block_line_ids: dict[str, list[str]],
+    column_cut_x: float | None = None,
 ) -> list[float]:
-    x0s: list[float] = []
+    """Passage 행 x0을 단별 상대 좌표로 모은다.
+
+    문단 분할 후에는 metadata.line_ids를 우선해, 공유 block_ids로
+    같은 줄이 여러 번 잡히지 않게 한다.
+    """
+    items: list[tuple[str, float]] = []
+    seen: set[str] = set()
     for child in group.children:
         if child.node_type != "Passage":
             continue
-        for bid in child.source_range.block_ids:
-            for lid in block_line_ids.get(bid, []):
-                x0 = line_x0.get(lid)
-                if x0 is None:
-                    continue
-                x0s.append(x0)
-    return x0s
+        meta_lines = child.metadata.get("line_ids")
+        if isinstance(meta_lines, list) and meta_lines:
+            lids = [str(x) for x in meta_lines]
+        else:
+            lids = []
+            for bid in child.source_range.block_ids:
+                lids.extend(block_line_ids.get(bid, []))
+        for lid in lids:
+            if lid in seen:
+                continue
+            x0 = line_x0.get(lid)
+            if x0 is None:
+                continue
+            seen.add(lid)
+            items.append((lid, x0))
+    return column_relative_x0s(items, column_cut_x=column_cut_x)
 
 
 def analyze_passage_group_indent(
@@ -188,11 +256,17 @@ def analyze_passage_group_indent(
     line_x0: dict[str, float],
     block_line_ids: dict[str, list[str]],
     config: PassageIndentGenreConfig = DEFAULT_PASSAGE_INDENT_GENRE_CONFIG,
+    column_cut_x: float | None = None,
 ) -> PassageIndentAnalysis | None:
     if group.node_type != "PassageGroup":
         return None
     return analyze_passage_indent(
-        _passage_group_x0s(group, line_x0=line_x0, block_line_ids=block_line_ids),
+        _passage_group_x0s(
+            group,
+            line_x0=line_x0,
+            block_line_ids=block_line_ids,
+            column_cut_x=column_cut_x,
+        ),
         config=config,
     )
 
@@ -203,9 +277,14 @@ def passage_group_indent_string(
     line_x0: dict[str, float],
     block_line_ids: dict[str, list[str]],
     config: PassageIndentGenreConfig = DEFAULT_PASSAGE_INDENT_GENRE_CONFIG,
+    column_cut_x: float | None = None,
 ) -> str:
     analysis = analyze_passage_group_indent(
-        group, line_x0=line_x0, block_line_ids=block_line_ids, config=config
+        group,
+        line_x0=line_x0,
+        block_line_ids=block_line_ids,
+        config=config,
+        column_cut_x=column_cut_x,
     )
     return analysis.profile if analysis else ""
 
@@ -216,8 +295,13 @@ def passage_group_genre_label(
     line_x0: dict[str, float],
     block_line_ids: dict[str, list[str]],
     config: PassageIndentGenreConfig = DEFAULT_PASSAGE_INDENT_GENRE_CONFIG,
+    column_cut_x: float | None = None,
 ) -> str:
     analysis = analyze_passage_group_indent(
-        group, line_x0=line_x0, block_line_ids=block_line_ids, config=config
+        group,
+        line_x0=line_x0,
+        block_line_ids=block_line_ids,
+        config=config,
+        column_cut_x=column_cut_x,
     )
     return analysis.genre if analysis else ""

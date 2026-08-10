@@ -16,6 +16,8 @@ from korean_exam_braille.app.exam.indent_profile import (
     build_block_line_ids_index,
     build_line_x0_index,
     classify_indent_levels,
+    column_relative_x0s,
+    column_relative_x0s_from_lines,
 )
 from korean_exam_braille.app.exam.models import ExamDocument, ExamNode, SourceRange
 from korean_exam_braille.app.exam.passage_indent_config import (
@@ -185,6 +187,15 @@ def count_indented_double_quote_lines(
     return n
 
 
+def _layout_column_cut(pdf: PdfDocumentStructure) -> float | None:
+    raw = (pdf.metadata or {}).get("layout_profile")
+    if isinstance(raw, dict):
+        cut = raw.get("column_cut_x")
+        return float(cut) if cut is not None else None
+    cut = getattr(raw, "column_cut_x", None)
+    return float(cut) if cut is not None else None
+
+
 def resplit_passage_run(
     passages: list[ExamNode],
     *,
@@ -193,6 +204,7 @@ def resplit_passage_run(
     block_line_ids: dict[str, list[str]],
     config: PassageIndentGenreConfig,
     id_prefix: str,
+    column_cut_x: float | None = None,
 ) -> list[ExamNode]:
     """연속 Passage 노드들을 장르 규칙으로 재분할. 시만 원본 유지."""
     if genre == config.label_si or not passages:
@@ -204,7 +216,11 @@ def resplit_passage_run(
     if len(rows) < 2:
         return list(passages)
 
-    x0s = [r.line.bbox[0] for r in rows]
+    # 단별 상대 x0 — 좌·우 혼입 시 오른쪽이 전부 R로 잡히지 않게
+    x0s = column_relative_x0s_from_lines(
+        [r.line for r in rows],
+        column_cut_x=column_cut_x,
+    )
     texts = [r.line.text or "" for r in rows]
     if genre == config.label_nonfiction:
         segs = _segments_from_starts(
@@ -243,18 +259,31 @@ def apply_genre_paragraph_splits(
     line_x0 = build_line_x0_index(pdf)
     block_line_ids = build_block_line_ids_index(pdf)
     lines_by_id = _index_lines(pdf)
+    column_cut_x = _layout_column_cut(pdf)
 
     def walk(node: ExamNode) -> None:
         if node.node_type == "PassageGroup":
+            items = []
+            seen: set[str] = set()
+            for child in node.children:
+                if child.node_type != "Passage":
+                    continue
+                meta_lines = child.metadata.get("line_ids")
+                if isinstance(meta_lines, list) and meta_lines:
+                    lids = [str(x) for x in meta_lines]
+                else:
+                    lids = [
+                        lid
+                        for bid in child.source_range.block_ids
+                        for lid in block_line_ids.get(bid, [])
+                    ]
+                for lid in lids:
+                    if lid in seen or lid not in line_x0:
+                        continue
+                    seen.add(lid)
+                    items.append((lid, line_x0[lid]))
             analysis = analyze_passage_indent(
-                [
-                    line_x0[lid]
-                    for child in node.children
-                    if child.node_type == "Passage"
-                    for bid in child.source_range.block_ids
-                    for lid in block_line_ids.get(bid, [])
-                    if lid in line_x0
-                ],
+                column_relative_x0s(items, column_cut_x=column_cut_x),
                 config=config,
             )
             node.metadata["indent_genre"] = analysis.genre
@@ -282,6 +311,7 @@ def apply_genre_paragraph_splits(
                         block_line_ids=block_line_ids,
                         config=config,
                         id_prefix=f"{node.id}-seg{i}",
+                        column_cut_x=column_cut_x,
                     )
                 )
                 i = j

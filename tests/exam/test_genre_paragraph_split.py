@@ -5,6 +5,10 @@ from korean_exam_braille.app.exam.genre_paragraph_split import (
     line_starts_with_double_quote,
     resplit_passage_run,
 )
+from korean_exam_braille.app.exam.indent_profile import (
+    classify_indent_levels,
+    column_relative_x0s,
+)
 from korean_exam_braille.app.exam.models import ExamNode, SourceRange
 from korean_exam_braille.app.exam.passage_indent_config import (
     DEFAULT_PASSAGE_INDENT_GENRE_CONFIG as CFG,
@@ -151,3 +155,65 @@ def test_novel_quote_keeps_following_indents():
     assert "서술1" in (out[1].source_range.raw_text or "")
     assert "새문단" in (out[2].source_range.raw_text or "")
     assert "이어짐" in (out[2].source_range.raw_text or "")
+
+
+def test_novel_mixed_columns_does_not_leave_giant_right_blob():
+    """좌단 + 우단 본문이 한 Passage로 남을 때 우단이 전부 R로 잡혀 거대 세그먼트가 되면 안 됨."""
+    lines = {}
+    block_line_ids: dict[str, list[str]] = {"bL": [], "bR": []}
+    # left flush paragraphs
+    for i, (text, x0) in enumerate(
+        [("좌시작", 106.0), ("좌이어", 96.0), ("좌이어2", 96.0)]
+    ):
+        lid = f"p1-c0-l{i}"
+        lines[lid] = _line(lid, text, x0)
+        block_line_ids["bL"].append(lid)
+    # right: three paragraphs (indent + body), absolute x0 that would all be R vs left min
+    right = [
+        ("우1시작", 447.0),
+        ("우1이어", 437.0),
+        ("우1이어2", 437.0),
+        ("우2시작", 447.0),
+        ("우2이어", 437.0),
+        ("우2이어2", 437.0),
+        ("우2이어3", 437.0),
+        ("우3시작", 447.0),
+        ("우3이어", 437.0),
+    ]
+    for i, (text, x0) in enumerate(right):
+        lid = f"p1-c1-l{i}"
+        lines[lid] = _line(lid, text, x0)
+        block_line_ids["bR"].append(lid)
+
+    # sanity: raw absolute classification would mark all right as R
+    abs_x0s = [lines[lid].bbox[0] for lid in block_line_ids["bL"] + block_line_ids["bR"]]
+    abs_levels = classify_indent_levels(abs_x0s)
+    assert abs_levels[3:].count("R") == len(right)
+
+    items = [
+        (lid, lines[lid].bbox[0]) for lid in block_line_ids["bL"] + block_line_ids["bR"]
+    ]
+    rel_levels = classify_indent_levels(column_relative_x0s(items))
+    assert rel_levels[3:].count("R") == 3  # one indent start per right paragraph
+
+    passages = [
+        ExamNode(
+            id="p0",
+            node_type="Passage",
+            source_range=SourceRange(
+                block_ids=["bL", "bR"], raw_text="x", page_number=1
+            ),
+        )
+    ]
+    out = resplit_passage_run(
+        passages,
+        genre=CFG.label_novel,
+        lines_by_id=lines,
+        block_line_ids=block_line_ids,
+        config=CFG,
+        id_prefix="g",
+    )
+    sizes = [len(p.metadata.get("line_ids") or []) for p in out]
+    assert max(sizes) <= 4
+    assert any("우2시작" in (p.source_range.raw_text or "") for p in out)
+    assert any("우3시작" in (p.source_range.raw_text or "") for p in out)

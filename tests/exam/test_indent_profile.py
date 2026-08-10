@@ -4,6 +4,7 @@ from korean_exam_braille.app.exam.indent_profile import (
     analyze_passage_indent,
     classify_indent_levels,
     classify_passage_genre,
+    column_relative_x0s,
     indent_profile_string,
     run_length_indent_string,
 )
@@ -70,3 +71,34 @@ def test_mode_b_label_suffix():
     assert analysis.genre == "비문학"
     assert analysis.sum_r == 1 and analysis.sum_l == 15
     assert analysis.mode_b_label_suffix().startswith("비문학 · R1/L15 · nonR1=0")
+
+
+def test_column_relative_x0s_mixed_columns_not_all_r():
+    """좌(~96) + 우(~437) 혼입 시 오른쪽 본문이 전부 R이 되면 안 된다."""
+    items = [
+        ("p1-c0-l0", 96.0),
+        ("p1-c0-l1", 106.0),  # 좌 들여쓰기
+        ("p1-c0-l2", 96.0),
+        ("p1-c1-l0", 437.0),
+        ("p1-c1-l1", 447.0),  # 우 들여쓰기
+        ("p1-c1-l2", 437.0),
+        ("p1-c1-l3", 437.0),
+    ]
+    rel = column_relative_x0s(items)
+    levels = classify_indent_levels(rel)
+    # 단별 정규화 후: L R L | L R L L
+    assert levels == ["L", "R", "L", "L", "R", "L", "L"]
+    right_levels = levels[3:]
+    assert right_levels.count("R") == 1
+    assert right_levels.count("L") == 3
+
+
+def test_column_relative_x0s_right_only_matches_global():
+    items = [
+        ("p7-c1-l0", 447.0),
+        ("p7-c1-l1", 437.0),
+        ("p7-c1-l2", 437.0),
+    ]
+    abs_x0s = [x for _lid, x in items]
+    rel = column_relative_x0s(items)
+    assert classify_indent_levels(rel) == classify_indent_levels(abs_x0s)

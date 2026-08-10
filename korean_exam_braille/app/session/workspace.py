@@ -356,6 +356,13 @@ class ConversionWorkspace:
             else {}
         )
         indent_cfg = DEFAULT_PASSAGE_INDENT_GENRE_CONFIG
+        column_cut_x: float | None = None
+        if pdf is not None:
+            layout = (pdf.metadata or {}).get("layout_profile")
+            if isinstance(layout, dict) and layout.get("column_cut_x") is not None:
+                column_cut_x = float(layout["column_cut_x"])
+            elif getattr(layout, "column_cut_x", None) is not None:
+                column_cut_x = float(layout.column_cut_x)
 
         def walk(node) -> dict[str, object]:
             raw = (node.source_range.raw_text or "").replace("\n", " ").strip()
@@ -376,6 +383,7 @@ class ConversionWorkspace:
                     line_x0=line_x0,
                     block_line_ids=block_line_ids,
                     config=indent_cfg,
+                    column_cut_x=column_cut_x,
                 )
                 if analysis is not None and analysis.line_count:
                     label = f"{label} · {analysis.mode_b_label_suffix()}"
