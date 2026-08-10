@@ -78,6 +78,53 @@ def _assign_columns(
     return out
 
 
+def _y_mid(span: PdfSpan) -> float:
+    return (span.bbox[1] + span.bbox[3]) / 2
+
+
+def _cluster_spans_by_y(
+    spans: list[PdfSpan],
+    *,
+    y_tolerance: float,
+) -> list[list[PdfSpan]]:
+    """같은 시각 행의 span을 y_mid 근접으로 묶는다.
+
+    열 분리는 호출 전에 끝난 상태라, 가로 gap으로 줄을 쪼개지 않는다.
+    (글자 크기만 다른 인라인 span이 가로로 떨어져도 한 줄로 유지)
+
+    정렬 키는 ``bbox[1]``(y0)이 아니라 ``y_mid`` — 크기·베이스라인 차로
+    y0만 어긋난 강조 span이 줄 앞으로 끼어들지 않게 한다.
+    """
+    if not spans:
+        return []
+    ordered = sorted(spans, key=lambda s: (_y_mid(s), s.bbox[0], s.extraction_index))
+    groups: list[list[PdfSpan]] = []
+    current: list[PdfSpan] = []
+    current_y: float | None = None
+
+    for span in ordered:
+        ym = _y_mid(span)
+        if current_y is None or abs(ym - current_y) <= y_tolerance:
+            current.append(span)
+            current_y = sum(_y_mid(s) for s in current) / len(current)
+        else:
+            groups.append(current)
+            current = [span]
+            current_y = ym
+    if current:
+        groups.append(current)
+    return groups
+
+
+def _join_line_text(group_sorted: list[PdfSpan]) -> str:
+    """행 span을 좌→우로 이어 붙인다. 부분 밑줄 마커를 보존한다."""
+    raw = "".join(
+        annotate_text_with_underline_ranges(s.text, s.underline_ranges)
+        for s in group_sorted
+    )
+    return " ".join(raw.split()) if raw.strip() else raw
+
+
 def _group_spans_into_lines(
     spans: list[PdfSpan],
     page_number: int,
@@ -88,41 +135,13 @@ def _group_spans_into_lines(
 ) -> list[PdfLine]:
     if not spans:
         return []
-    ordered = sorted(spans, key=lambda s: (s.bbox[1], s.bbox[0], s.extraction_index))
-    groups: list[list[PdfSpan]] = []
-    current: list[PdfSpan] = []
-    current_y: float | None = None
-
-    for span in ordered:
-        y_mid = (span.bbox[1] + span.bbox[3]) / 2
-        if current_y is None or abs(y_mid - current_y) <= y_tolerance:
-            if current:
-                max_x1 = max(s.bbox[2] for s in current)
-                if span.bbox[0] - max_x1 > max(28.0, y_tolerance * 6):
-                    groups.append(current)
-                    current = [span]
-                    current_y = y_mid
-                    continue
-            current.append(span)
-            ys = [(s.bbox[1] + s.bbox[3]) / 2 for s in current]
-            current_y = sum(ys) / len(ys)
-        else:
-            groups.append(current)
-            current = [span]
-            current_y = y_mid
-    if current:
-        groups.append(current)
+    groups = _cluster_spans_by_y(spans, y_tolerance=y_tolerance)
 
     label = {-2: "h", -1: "f", 0: "0", 1: "1", 2: "t"}.get(column_index, str(column_index))
     lines: list[PdfLine] = []
     for i, group in enumerate(groups):
         group_sorted = sorted(group, key=lambda s: (s.bbox[0], s.extraction_index))
-        # 부분 밑줄을 <u>…</u> 로 남겨 점역기가 ,- … -' 로 바꾸게 한다.
-        raw = "".join(
-            annotate_text_with_underline_ranges(s.text, s.underline_ranges)
-            for s in group_sorted
-        )
-        text = " ".join(raw.split()) if raw.strip() else raw
+        text = _join_line_text(group_sorted)
         bbox = _union_bbox([s.bbox for s in group_sorted])
         lines.append(
             PdfLine(
