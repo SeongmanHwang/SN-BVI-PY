@@ -157,6 +157,41 @@ def test_novel_quote_keeps_following_indents():
     assert "이어짐" in (out[2].source_range.raw_text or "")
 
 
+def test_resplit_preserves_bracket_labels_on_passage():
+    """문단 분할 후에도 line.bracket_label → Passage 구간 메타가 유지되어야 한다."""
+    lines = {
+        "p1-c0-l0": _line("p1-c0-l0", "구간시작", 110.0),
+        "p1-c0-l1": _line("p1-c0-l1", "이어짐", 100.0),
+        "p1-c0-l2": _line("p1-c0-l2", "새문단", 110.0),
+        "p1-c0-l3": _line("p1-c0-l3", "이어짐2", 100.0),
+    }
+    lines["p1-c0-l0"].bracket_label = "[A]"
+    lines["p1-c0-l1"].bracket_label = "[A]"
+    block_line_ids = {"b1": ["p1-c0-l0", "p1-c0-l1", "p1-c0-l2", "p1-c0-l3"]}
+    passages = [
+        ExamNode(
+            id="p0",
+            node_type="Passage",
+            source_range=SourceRange(block_ids=["b1"], raw_text="x", page_number=1),
+        )
+    ]
+    out = resplit_passage_run(
+        passages,
+        genre=CFG.label_nonfiction,
+        lines_by_id=lines,
+        block_line_ids=block_line_ids,
+        config=CFG,
+        id_prefix="g",
+        bracket_starts={"p1-c0-l0": "[A]"},
+        bracket_ends={"p1-c0-l1": "[A]"},
+    )
+    assert len(out) == 2
+    assert out[0].metadata.get("bracket_labels") == ["[A]"]
+    assert out[0].metadata.get("bracket_start_labels") == ["[A]"]
+    assert out[0].metadata.get("bracket_end_labels") == ["[A]"]
+    assert "bracket_labels" not in out[1].metadata
+
+
 def test_novel_mixed_columns_does_not_leave_giant_right_blob():
     """좌단 + 우단 본문이 한 Passage로 남을 때 우단이 전부 R로 잡혀 거대 세그먼트가 되면 안 됨."""
     lines = {}

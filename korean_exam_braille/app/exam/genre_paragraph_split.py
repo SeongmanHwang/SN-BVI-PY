@@ -146,14 +146,62 @@ def _segments_from_starts(n: int, starts: list[int]) -> list[tuple[int, int]]:
     return segs
 
 
+def _bracket_endpoint_index(
+    pdf: PdfDocumentStructure,
+) -> tuple[dict[str, str], dict[str, str]]:
+    """bracket_group 첫/끝 line_id → label."""
+    starts: dict[str, str] = {}
+    ends: dict[str, str] = {}
+    for page in pdf.pages:
+        for group in page.bracket_groups or []:
+            if not group.line_ids:
+                continue
+            starts[group.line_ids[0]] = group.label
+            ends[group.line_ids[-1]] = group.label
+    return starts, ends
+
+
 def _passage_node_from_lines(
     rows: list[_PassageLine],
     *,
     node_id: str,
+    bracket_starts: dict[str, str] | None = None,
+    bracket_ends: dict[str, str] | None = None,
 ) -> ExamNode:
     text = "\n".join(r.line.text for r in rows if r.line.text is not None)
     block_ids = list(dict.fromkeys(r.block_id for r in rows))
     page = rows[0].line.page_number if rows else None
+    labels: list[str] = []
+    starts: list[str] = []
+    ends: list[str] = []
+    for r in rows:
+        lab = r.line.bracket_label
+        if lab and lab not in labels:
+            labels.append(lab)
+        if bracket_starts:
+            s = bracket_starts.get(r.line.id)
+            if s and s not in starts:
+                starts.append(s)
+        if bracket_ends:
+            e = bracket_ends.get(r.line.id)
+            if e and e not in ends:
+                ends.append(e)
+    meta: dict[str, object] = {
+        "paragraph_split": True,
+        "line_ids": [r.line.id for r in rows],
+    }
+    tags: list[str] = []
+    if labels:
+        meta["bracket_labels"] = labels
+        tags.append(f"bracket:{','.join(labels)}")
+    if starts:
+        meta["bracket_start_labels"] = starts
+        tags.append(f"bracket-start:{','.join(starts)}")
+    if ends:
+        meta["bracket_end_labels"] = ends
+        tags.append(f"bracket-end:{','.join(ends)}")
+    if tags:
+        meta["candidate_tags"] = tags
     return ExamNode(
         id=node_id,
         node_type="Passage",
@@ -163,12 +211,8 @@ def _passage_node_from_lines(
             raw_text=text,
         ),
         confidence=0.85,
-        metadata={
-            "paragraph_split": True,
-            "line_ids": [r.line.id for r in rows],
-        },
+        metadata=meta,
     )
-
 
 def count_indented_double_quote_lines(
     x0s: list[float],
@@ -205,6 +249,8 @@ def resplit_passage_run(
     config: PassageIndentGenreConfig,
     id_prefix: str,
     column_cut_x: float | None = None,
+    bracket_starts: dict[str, str] | None = None,
+    bracket_ends: dict[str, str] | None = None,
 ) -> list[ExamNode]:
     """연속 Passage 노드들을 장르 규칙으로 재분할. 시만 원본 유지."""
     if genre == config.label_si or not passages:
@@ -244,6 +290,8 @@ def resplit_passage_run(
             _passage_node_from_lines(
                 rows[a:b],
                 node_id=f"{id_prefix}-p{idx}",
+                bracket_starts=bracket_starts,
+                bracket_ends=bracket_ends,
             )
         )
     return out
@@ -260,6 +308,7 @@ def apply_genre_paragraph_splits(
     block_line_ids = build_block_line_ids_index(pdf)
     lines_by_id = _index_lines(pdf)
     column_cut_x = _layout_column_cut(pdf)
+    bracket_starts, bracket_ends = _bracket_endpoint_index(pdf)
 
     def walk(node: ExamNode) -> None:
         if node.node_type == "PassageGroup":
@@ -312,6 +361,8 @@ def apply_genre_paragraph_splits(
                         config=config,
                         id_prefix=f"{node.id}-seg{i}",
                         column_cut_x=column_cut_x,
+                        bracket_starts=bracket_starts,
+                        bracket_ends=bracket_ends,
                     )
                 )
                 i = j
