@@ -321,7 +321,7 @@ class ConversionWorkspace:
         return format_exam_summary(exam) + "\n\n" + format_exam_tree(exam)
 
     def pdf_page_payload(self, page_number: int) -> dict[str, object]:
-        """면 텍스트·크기·블록 bbox (하이라이트용)."""
+        """면 텍스트·크기·블록/행 bbox (하이라이트용)."""
         page = self.service.get_page(page_number)
         blocks = sorted(page.blocks, key=lambda b: b.reading_order)
         return {
@@ -336,6 +336,13 @@ class ConversionWorkspace:
                 }
                 for b in blocks
             ],
+            "lines": [
+                {
+                    "id": ln.id,
+                    "bbox": [ln.bbox[0], ln.bbox[1], ln.bbox[2], ln.bbox[3]],
+                }
+                for ln in page.lines
+            ],
         }
 
     def exam_tree_nodes(self) -> dict[str, object]:
@@ -343,6 +350,11 @@ class ConversionWorkspace:
         pdf = self.service.document
         line_x0 = build_line_x0_index(pdf) if pdf is not None else {}
         block_line_ids = build_block_line_ids_index(pdf) if pdf is not None else {}
+        lines_by_id = (
+            {ln.id: ln for page in pdf.pages for ln in page.lines}
+            if pdf is not None
+            else {}
+        )
         indent_cfg = DEFAULT_PASSAGE_INDENT_GENRE_CONFIG
 
         def walk(node) -> dict[str, object]:
@@ -392,6 +404,36 @@ class ConversionWorkspace:
                 "block_ids": list(node.source_range.block_ids),
                 "children": [walk(c) for c in node.children],
             }
+            meta_lines = node.metadata.get("line_ids")
+            if isinstance(meta_lines, list) and meta_lines:
+                line_ids = [str(x) for x in meta_lines]
+            else:
+                line_ids = []
+                for bid in node.source_range.block_ids:
+                    line_ids.extend(block_line_ids.get(bid, []))
+            if line_ids:
+                payload["line_ids"] = line_ids
+                highlights: list[dict[str, object]] = []
+                for lid in line_ids:
+                    ln = lines_by_id.get(lid)
+                    if ln is None:
+                        continue
+                    highlights.append(
+                        {
+                            "page_number": ln.page_number,
+                            "bbox": [
+                                ln.bbox[0],
+                                ln.bbox[1],
+                                ln.bbox[2],
+                                ln.bbox[3],
+                            ],
+                        }
+                    )
+                if highlights:
+                    payload["highlights"] = highlights
+                    # 선택 시 첫 하이라이트 면으로 이동
+                    if payload.get("page_number") is None:
+                        payload["page_number"] = highlights[0]["page_number"]
             if indent_debug is not None:
                 payload["indent_debug"] = indent_debug
             return payload

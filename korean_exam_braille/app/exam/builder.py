@@ -8,6 +8,7 @@ from korean_exam_braille.app.common.patterns import PASSAGE_RANGE, QUESTION_NUM
 from korean_exam_braille.app.exam.bracket_metadata import (
     metadata_from_candidate_tags,
 )
+from korean_exam_braille.app.exam.genre_paragraph_split import apply_genre_paragraph_splits
 from korean_exam_braille.app.exam.models import (
     ExamDocument,
     ExamNode,
@@ -257,9 +258,11 @@ class RuleExamStructureBuilder:
             children=root_children,
             metadata={"source_path": pdf.source_path},
         )
-        return ExamDocument(
+        exam = ExamDocument(
             root=root,
             relations=relations,
             unclassified_ids=unclassified,
             metadata={"builder": "RuleExamStructureBuilder"},
         )
+        apply_genre_paragraph_splits(exam, pdf)
+        return exam

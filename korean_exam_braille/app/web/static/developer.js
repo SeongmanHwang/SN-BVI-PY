@@ -23,6 +23,7 @@
    *   examTree: object|null,
    *   selectedNodeId: string|null,
    *   highlightBlockIds: string[],
+   *   highlightLineIds: string[],
    *   status: object|null,
    *   warnings: Array<string>,
    * } | null} */
@@ -104,6 +105,9 @@
         if (child.block_ids && child.block_ids.length) {
           li.dataset.blockIds = child.block_ids.join(",");
         }
+        if (child.line_ids && child.line_ids.length) {
+          li.dataset.lineIds = child.line_ids.join(",");
+        }
 
         const row = document.createElement("div");
         row.className = "node-row";
@@ -165,6 +169,15 @@
       .forEach((el) => el.classList.remove("is-selected"));
   }
 
+  function collectHighlights(node, out) {
+    const acc = out || [];
+    if (Array.isArray(node.highlights) && node.highlights.length) {
+      for (const h of node.highlights) acc.push(h);
+    }
+    (node.children || []).forEach((c) => collectHighlights(c, acc));
+    return acc;
+  }
+
   function selectTreeNode(node, li) {
     if (!cache) return;
     clearTreeSelection();
@@ -175,10 +188,32 @@
     cache.highlightBlockIds = Array.isArray(node.block_ids)
       ? node.block_ids.slice()
       : [];
+    cache.highlightLineIds = Array.isArray(node.line_ids)
+      ? node.line_ids.slice()
+      : [];
+    const own = Array.isArray(node.highlights) ? node.highlights : [];
+    cache.highlightRects = own.length ? own.slice() : collectHighlights(node);
+    console.log("[highlight] select", {
+      id: node.id,
+      type: node.type,
+      page: node.page_number,
+      highlights: (cache.highlightRects || []).length,
+      lineIds: (cache.highlightLineIds || []).length,
+      blockIds: (cache.highlightBlockIds || []).length,
+      sample: (cache.highlightRects || [])[0] || null,
+    });
 
-    const pageNumber = node.page_number;
+    let pageNumber = node.page_number;
+    if (
+      (pageNumber == null || Number.isNaN(Number(pageNumber))) &&
+      cache.highlightRects.length
+    ) {
+      pageNumber = cache.highlightRects[0].page_number;
+    }
     if (pageNumber != null) {
-      const idx = cache.pdfPages.findIndex((p) => p.page_number === pageNumber);
+      const idx = cache.pdfPages.findIndex(
+        (p) => p.page_number === Number(pageNumber)
+      );
       if (idx >= 0 && idx !== cache.pageIndex) {
         showLinkedPage(idx);
       } else {
@@ -189,11 +224,27 @@
     }
 
     const label = node.label || node.type || "노드";
-    if (cache.highlightBlockIds.length) {
+    const nRect = (cache.highlightRects || []).length;
+    if (nRect) {
+      highlightStatus.textContent = `선택: ${label} · 영역 ${nRect}개 강조`;
+    } else if (cache.highlightLineIds.length) {
+      highlightStatus.textContent = `선택: ${label} · 행 ${cache.highlightLineIds.length}개 강조`;
+    } else if (cache.highlightBlockIds.length) {
       highlightStatus.textContent = `선택: ${label} · 블록 ${cache.highlightBlockIds.length}개 강조`;
     } else {
       highlightStatus.textContent = `선택: ${label} · 연결 블록 없음`;
     }
+  }
+
+  function appendHighlightRect(x0, y0, x1, y1) {
+    if ([x0, y0, x1, y1].some((v) => typeof v !== "number")) return;
+    const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+    rect.setAttribute("x", String(x0));
+    rect.setAttribute("y", String(y0));
+    rect.setAttribute("width", String(Math.max(0, x1 - x0)));
+    rect.setAttribute("height", String(Math.max(0, y1 - y0)));
+    rect.setAttribute("class", "pdf-highlight");
+    pdfOverlayB.appendChild(rect);
   }
 
   function paintOverlay() {
@@ -208,20 +259,59 @@
     pdfOverlayB.setAttribute("width", "100%");
     pdfOverlayB.setAttribute("height", "100%");
 
-    const ids = new Set(cache.highlightBlockIds || []);
-    if (!ids.size) return;
+    const pageNumber = pdf.page_number;
+    const rects = (cache.highlightRects || []).filter(
+      (r) => Number(r.page_number) === Number(pageNumber)
+    );
+    if (rects.length) {
+      rects.forEach((r) => {
+        const [x0, y0, x1, y1] = r.bbox || [];
+        appendHighlightRect(x0, y0, x1, y1);
+      });
+      console.log("[highlight] paint rects", {
+        page: pageNumber,
+        painted: rects.length,
+        overlayChildren: pdfOverlayB.childElementCount,
+      });
+      return;
+    }
 
+    const lineIds = new Set(cache.highlightLineIds || []);
+    let painted = 0;
+    if (lineIds.size) {
+      (pdf.lines || []).forEach((line) => {
+        if (!lineIds.has(line.id)) return;
+        const [x0, y0, x1, y1] = line.bbox || [];
+        appendHighlightRect(x0, y0, x1, y1);
+        painted += 1;
+      });
+      if (painted) {
+        console.log("[highlight] paint lines", {
+          page: pageNumber,
+          painted,
+          overlayChildren: pdfOverlayB.childElementCount,
+        });
+        return;
+      }
+    }
+
+    const ids = new Set(cache.highlightBlockIds || []);
+    if (!ids.size) {
+      console.log("[highlight] paint none", {
+        page: pageNumber,
+        hasLines: Array.isArray(pdf.lines),
+        lineIds: lineIds.size,
+      });
+      return;
+    }
     (pdf.blocks || []).forEach((block) => {
       if (!ids.has(block.id)) return;
       const [x0, y0, x1, y1] = block.bbox || [];
-      if ([x0, y0, x1, y1].some((v) => typeof v !== "number")) return;
-      const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-      rect.setAttribute("x", String(x0));
-      rect.setAttribute("y", String(y0));
-      rect.setAttribute("width", String(Math.max(0, x1 - x0)));
-      rect.setAttribute("height", String(Math.max(0, y1 - y0)));
-      rect.setAttribute("class", "pdf-highlight");
-      pdfOverlayB.appendChild(rect);
+      appendHighlightRect(x0, y0, x1, y1);
+    });
+    console.log("[highlight] paint blocks", {
+      page: pageNumber,
+      overlayChildren: pdfOverlayB.childElementCount,
     });
   }
 
@@ -370,6 +460,8 @@
         examTree: data.exam_tree || null,
         selectedNodeId: null,
         highlightBlockIds: [],
+        highlightLineIds: [],
+        highlightRects: [],
         status: data.status || null,
         warnings: data.warnings || [],
       };
@@ -468,6 +560,8 @@
     if (Number.isNaN(n)) return;
     if (cache) {
       cache.highlightBlockIds = [];
+      cache.highlightLineIds = [];
+      cache.highlightRects = [];
       cache.selectedNodeId = null;
       clearTreeSelection();
       highlightStatus.textContent = "";
