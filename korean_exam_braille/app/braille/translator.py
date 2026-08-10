@@ -737,6 +737,11 @@ class TableBrailleTranslator:
                     "skipped": True,
                 },
             )
+        # Passage: PDF 행 개행을 문단 줄바꿈으로 쓰지 않음 — 공백으로 이어
+        # 붙여 32셀이 찰 때까지 레이아웃이 soft wrap 하게 한다.
+        if node.node_type == "Passage":
+            text = re.sub(r"[\r\n]+", " ", text)
+            text = re.sub(r" {2,}", " ", text)
         starts = bracket_labels(node.metadata, starts_only=True)
         ends = bracket_labels(node.metadata, ends_only=True)
         seq = self.translate_text(text)

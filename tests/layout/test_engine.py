@@ -198,3 +198,30 @@ def test_separator_after_passage_group():
     assert any("82" in s or "1" in s or "[" in s or "next" in s for s in ascii_lines[:sep_idx])
     assert any("passage" in s for s in ascii_lines[sep_idx + 1 :])
 
+
+def test_passage_newlines_flatten_before_32_wrap():
+    """같은 Passage 안 PDF 행 개행은 32셀이 차기 전에 줄을 나누지 않는다."""
+    from korean_exam_braille.app.braille.translator import TableBrailleTranslator
+    from korean_exam_braille.app.exam.models import ExamNode, SourceRange
+
+    ink = "짧은가\n짧은나\n짧은다"
+    node = ExamNode(
+        id="p1",
+        node_type="Passage",
+        source_range=SourceRange(page_number=1, block_ids=["b1"], raw_text=ink),
+    )
+    seq = TableBrailleTranslator().translate_node(node)
+    assert "\n" not in (seq.metadata.get("ascii") or "")
+
+    engine = RuleBrailleLayoutEngine()
+    profile = LayoutProfile(cells_per_line=32, paragraph_indent=2, lines_per_page=26)
+    # layout 방어 경로: 개행이 남은 ASCII도 Passage면 합친다
+    short_lines = "aaaa\nbbbb\ncccc"
+    doc = engine.layout([_seq(short_lines, "Passage")], profile=profile)
+    body = [ln.ascii_text for ln in doc.pages[0].lines if (ln.ascii_text or "").strip()]
+    assert len(body) == 1
+    assert body[0].startswith("  ")
+    assert "aaaa bbbb cccc" in body[0].replace("  ", "", 1) or body[0].endswith(
+        "aaaa bbbb cccc"
+    )
+

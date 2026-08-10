@@ -61,6 +61,56 @@ def _move_cut_before_nonbreaking(text: str, start: int, cut: int) -> int:
     return cut
 
 
+def _flatten_passage_newlines(
+    text: str,
+    roman_mask: list[bool] | None,
+) -> tuple[str, list[bool] | None]:
+    """Passage soft wrap 전: 하드 개행을 공백으로 바꿔 한 흐름으로 만든다."""
+    if not text or ("\n" not in text and "\r" not in text):
+        return text, roman_mask
+    out_chars: list[str] = []
+    out_mask: list[bool] | None = [] if roman_mask is not None else None
+    i = 0
+    n = len(text)
+    while i < n:
+        ch = text[i]
+        if ch == "\r" and i + 1 < n and text[i + 1] == "\n":
+            out_chars.append(" ")
+            if out_mask is not None and roman_mask is not None:
+                out_mask.append(False)
+            i += 2
+            continue
+        if ch in "\r\n":
+            out_chars.append(" ")
+            if out_mask is not None and roman_mask is not None:
+                out_mask.append(False)
+            i += 1
+            continue
+        out_chars.append(ch)
+        if out_mask is not None and roman_mask is not None:
+            out_mask.append(roman_mask[i] if i < len(roman_mask) else False)
+        i += 1
+    flat = "".join(out_chars)
+    # 연속 공백은 하나로 (마스크 False로 합침)
+    collapsed: list[str] = []
+    collapsed_mask: list[bool] | None = [] if out_mask is not None else None
+    prev_space = False
+    for j, ch in enumerate(flat):
+        if ch == " ":
+            if prev_space:
+                continue
+            prev_space = True
+            collapsed.append(" ")
+            if collapsed_mask is not None and out_mask is not None:
+                collapsed_mask.append(False)
+            continue
+        prev_space = False
+        collapsed.append(ch)
+        if collapsed_mask is not None and out_mask is not None:
+            collapsed_mask.append(out_mask[j])
+    return "".join(collapsed), collapsed_mask
+
+
 def _indent_for(node_type: str | None, profile: LayoutProfile) -> int:
     # Header는 translator가 이미 들여쓰기·가운데 패딩함
     if node_type == "Header":
@@ -240,6 +290,12 @@ class RuleBrailleLayoutEngine:
             roman_mask = _sequence_roman_mask(seq, ascii_text)
             indent = _indent_for(node_type, prof)
             preformatted = bool(seq.metadata.get("preformatted"))
+            # Passage: translator가 개행을 공백으로 합치는 것이 정석이지만,
+            # 시퀀스에 남은 \n 도 soft wrap 전에 한 흐름으로 만든다.
+            if node_type == "Passage" and not preformatted:
+                ascii_text, roman_mask = _flatten_passage_newlines(
+                    ascii_text, roman_mask
+                )
             # 미리 패딩된 Header는 줄 단위로만 넣고 wrap하지 않음
             if preformatted:
                 rows = ascii_text.split("\n") if ascii_text else [""]
