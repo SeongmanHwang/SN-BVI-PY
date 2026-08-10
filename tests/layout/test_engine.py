@@ -225,3 +225,32 @@ def test_passage_newlines_flatten_before_32_wrap():
         "aaaa bbbb cccc"
     )
 
+
+def test_choice_and_question_newlines_flatten_before_32_wrap():
+    """Choice·Question도 Passage와 같이 노드 안 하드 개행을 공백으로 합친다."""
+    from korean_exam_braille.app.braille.translator import TableBrailleTranslator
+    from korean_exam_braille.app.exam.models import ExamNode, SourceRange
+
+    eng = RuleBrailleLayoutEngine()
+    profile = LayoutProfile(cells_per_line=32, paragraph_indent=2, lines_per_page=26)
+    for ntype in ("Choice", "Question"):
+        ink = "짧은가\n짧은나"
+        node = ExamNode(
+            id=f"{ntype}-1",
+            node_type=ntype,
+            source_range=SourceRange(
+                page_number=1, block_ids=["b1"], raw_text=ink
+            ),
+        )
+        seq = TableBrailleTranslator().translate_node(node)
+        assert "\n" not in (seq.metadata.get("ascii") or ""), ntype
+
+        doc = eng.layout([_seq("aaaa\nbbbb", ntype)], profile=profile)
+        body = [
+            ln.ascii_text
+            for ln in doc.pages[0].lines
+            if (ln.ascii_text or "").strip()
+        ]
+        assert len(body) == 1, ntype
+        assert "aaaa bbbb" in body[0], ntype
+

@@ -3,6 +3,7 @@
 from korean_exam_braille.app.braille.translator import hangul_text_to_ascii
 from korean_exam_braille.app.brf.reverse_translator import reverse_translate_line
 from korean_exam_braille.app.common.hanja_reading import (
+    apply_dueum_beop,
     hanja_reading,
     replace_hanja_with_reading,
 )
@@ -22,6 +23,23 @@ def test_redundant_paren_gloss_collapsed():
     assert replace_hanja_with_reading("한자(漢字)") == "한자"
     assert replace_hanja_with_reading("學校(학교)") == "학교"
     assert replace_hanja_with_reading("學校（학교）") == "학교"
+
+
+def test_dueum_beop_collapses_paren_gloss():
+    """병기 비교에 두음법칙 — 노모(로모)·이론(리론)·여자(녀자)."""
+    assert apply_dueum_beop("로모") == "노모"
+    assert apply_dueum_beop("리론") == "이론"
+    assert apply_dueum_beop("녀자") == "여자"
+    assert apply_dueum_beop("량심") == "양심"
+
+    assert replace_hanja_with_reading("노모(老母)") == "노모"
+    assert replace_hanja_with_reading("로모(老母)") == "노모"
+    assert replace_hanja_with_reading("이론(理論)") == "이론"
+    assert replace_hanja_with_reading("여자(女子)") == "여자"
+    assert replace_hanja_with_reading("역사(歷史)") == "역사"
+
+    # 두음법칙와 무관하면 접지 않음
+    assert "(" in replace_hanja_with_reading("노모(부모)")
 
 
 def test_no_hanja_switch_indicator():

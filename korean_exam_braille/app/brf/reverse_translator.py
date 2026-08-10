@@ -281,6 +281,14 @@ def _match_punct(chars: list[str], i: int) -> tuple[str, int] | None:
             rest = normalize_brf_ascii("".join(chars[i:]))
             if _PASSAGE_RANGE_ASCII.match(rest):
                 continue
+        # ,-:/… = ㅅ+붙임줄+모음(셨…). 밑줄 시작(,-)과 충돌하므로,
+        # 바로 모음이 오고 닫는 -' 짝이 없으면 음절 조립에 맡긴다.
+        if key == ",-":
+            after = i + len(key)
+            if _take_vowel(chars, after) is not None:
+                rest = "".join(chars[after:])
+                if "-'" not in normalize_brf_ascii(rest):
+                    continue
         return ink, len(key)
     return None
 
@@ -496,6 +504,12 @@ def _take_final(
       - 역점역: 공백·EOL·밑줄·닫는부호 앞에서,
                 짧은 어절(≤2) + 흔한 ㅌ받침/단독 어절 → ㅌ,
                 긴 어절(≥3) 또는 그 외 → 물음표
+
+    종성 ㅋ과 느낌표는 동일 셀(ASCII ``6``):
+      - 점역: 두 음절 이하 어절 뒤 느낌표 앞에 공백
+      - 역점역: 공백·EOL·밑줄·닫는부호 앞에서,
+                짧은 어절(완성 중 포함 ≤2음절) 뒤 ``6`` → 종성 ㅋ,
+                세 음절 이상 어절 뒤 ``6`` → 느낌표
     """
     if i >= len(chars):
         return None
@@ -511,11 +525,18 @@ def _take_final(
     nxt = _peek(chars, i + 1)
 
     if nxt is not None and (n + nxt) in JONGSEONG_DIGRAPHS:
-        # 겹받침 vs 종성+닫는부호: 두 칸이 닫는 복합이면 포기
+        # 겹받침 vs 종성+닫는부호: 둘째 칸이 닫는 복합 시작이면 보통 포기
+        # (만”=e300 → 종성 ㄴ + 00).
+        # 다만 겹받침을 취한 뒤에도 닫는 복합이 되면 겹받침 우선
+        # (많’=e300' → 30 + 0', 00에 가로채지 않음).
         # 겹받침 18(ㄾ) vs 여는 대괄호 82: 뒤에 ;0 짝이 있으면 대괄호 우선
-        if not _starts_closing_multi(chars, i + 1) and not (
-            _opens_square_bracket(chars, i + 1)
-            and _has_closing_square_ahead(chars, i + 3)
+        closing_at_second = _starts_closing_multi(chars, i + 1)
+        closing_after_digraph = _starts_closing_multi(chars, i + 2)
+        square_steal = _opens_square_bracket(chars, i + 1) and _has_closing_square_ahead(
+            chars, i + 3
+        )
+        if not square_steal and (
+            not closing_at_second or closing_after_digraph
         ):
             return JONGSEONG_DIGRAPHS[n + nxt], i + 2, False
 
@@ -539,9 +560,12 @@ def _take_final(
             return JONGSEONG["8"], i + 1, False
         return "?", i + 1, True
 
-    # 느낌표(6) ↔ 종성 ㅋ — 문장 끝(공백·밑줄)이면 구두점
-    if n == "6" and _is_tail_boundary(chars, i + 1):
-        return PUNCT_SINGLE["6"], i + 1, True
+    # 느낌표(6) ↔ 종성 ㅋ(6) — 어절 음절 수로 구분 (마침표/ㅍ와 동일)
+    if n == "6" and _is_period_disambig_boundary(chars, i + 1):
+        word_syl = _out_word_hangul_count(out) + 1
+        if word_syl <= _JONG_PUNCT_DISAMBIG_MAX_SYL:
+            return JONGSEONG["6"], i + 1, False
+        return "!", i + 1, True
 
     # 종성 ㅎ(0) — 다음에 닫는 따옴표 2칸이 오면 종성 아님(위에서 처리)
     # 단독 0 뒤가 경계이고 직전이 모음 음절이면 종성 ㅎ 가능
@@ -1191,6 +1215,16 @@ def reverse_translate_line(raw_ascii: str) -> str:
             continue
 
         # 10) 초성 + 모음 / CV 약자
+        # 붙임줄(-): 초성셀+붙임+모음(+받침) → 혔/졌… (하+였 j:/ 과 구분)
+        if n in CHOSEONG and _peek(chars, i + 1) == "-":
+            vowel = _take_vowel(chars, i + 2)
+            if vowel:
+                jung, k = vowel
+                cho = CHOSEONG[n]
+                i = _emit_syllable_with_optional_final(
+                    out, chars, cho, jung, k, skip_jong=skip_jong
+                )
+                continue
         # 하(j)+였/었(:/ 또는 s/) → 하였/하었. 자(.)+ㅕ+ㅆ → 졌 (자였 아님).
         if n in CHOSEONG:
             cho = CHOSEONG[n]
@@ -1263,8 +1297,8 @@ def reverse_translate_line(raw_ascii: str) -> str:
                     open_quote_depth += 1
                     i += 1
                     continue
-            # 마침표 앞 공백은 점역의 ㅍ·마침표 구분용 → 묵자에서는 제거
-            if n == "4" and out and out[-1] == " ":
+            # 마침표·느낌표 앞 공백은 종성 구분용 → 묵자에서는 제거
+            if n in ("4", "6") and out and out[-1] == " ":
                 out.pop()
             out.append(PUNCT_SINGLE[n])
             i += 1

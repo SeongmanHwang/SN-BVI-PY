@@ -86,6 +86,11 @@ _DIGIT_TO_ASCII: dict[str, str] = {v: k for k, v in NUMBER_MAP.items()}
 _PERIOD_JONG_DISAMBIG_MAX_SYL = 2
 _JONG_PUNCT_DISAMBIG_MAX_SYL = _PERIOD_JONG_DISAMBIG_MAX_SYL
 
+# 가류 약자 셀과 초성이 같은 음절(ㅎㅅㄷㅈㅋㅍ)+ㅕ+ㅆ.
+# 하+였(j:/) 등과 헷갈리지 않도록 초성·모음 사이에 붙임줄(dots 36, ASCII '-')을 둔다.
+_YEOSS_COUPLING_CHO = frozenset({"ㅎ", "ㅅ", "ㄷ", "ㅈ", "ㅋ", "ㅍ"})
+_COUPLING_MARK = "-"  # 붙임줄 ⠤ (3-6)
+
 _PUNCT_TO_ASCII: dict[str, str] = {
     ".": "4",
     "!": "6",
@@ -301,6 +306,14 @@ def _encode_syllable(cho: str, jung: str, jong: str) -> str:
         cho_ascii = _CHO_TO_ASCII.get(cho)
         if cho_ascii:
             return cho_ascii + _VC_ABBREV[(jung, jong)]
+
+    # 혔/셨/뎠/졌/켰/폈: 245(등)+36+156+34 — 붙임줄로 하+였 혼동 방지
+    if jung == "ㅕ" and jong == "ㅆ" and cho in _YEOSS_COUPLING_CHO:
+        cho_ascii = _CHO_TO_ASCII.get(cho)
+        jung_ascii = _JUNG_TO_ASCII.get(jung)
+        jong_ascii = _JONG_TO_ASCII.get(jong)
+        if cho_ascii and jung_ascii and jong_ascii:
+            return cho_ascii + _COUPLING_MARK + jung_ascii + jong_ascii
 
     if jung == "ㅏ" and cho in _CV_ABBREV_BY_CHO:
         # 종성 ㅆ(`/`)은 중성 ㅖ와 같은 셀이라 가류 약자+/ 가
@@ -651,17 +664,7 @@ def _hangul_body_to_ascii_masked(text: str) -> tuple[str, list[bool]]:
                     i += 1
                 emit(" ")
                 continue
-            if ch == ".":
-                syl = _trailing_hangul_syllables(text, i)
-                if (
-                    1 <= syl <= _JONG_PUNCT_DISAMBIG_MAX_SYL
-                    and (not out or out[-1] != " ")
-                ):
-                    emit(" ")
-                emit(_PUNCT_TO_ASCII[ch])
-                i += 1
-                continue
-            if ch == "?":
+            if ch in (".", "?", "!"):
                 syl = _trailing_hangul_syllables(text, i)
                 if (
                     1 <= syl <= _JONG_PUNCT_DISAMBIG_MAX_SYL
@@ -737,9 +740,9 @@ class TableBrailleTranslator:
                     "skipped": True,
                 },
             )
-        # Passage: PDF 행 개행을 문단 줄바꿈으로 쓰지 않음 — 공백으로 이어
-        # 붙여 32셀이 찰 때까지 레이아웃이 soft wrap 하게 한다.
-        if node.node_type == "Passage":
+        # Passage/Choice/Question: PDF 행 개행을 문단 줄바꿈으로 쓰지 않음 —
+        # 공백으로 이어 붙여 32셀이 찰 때까지 레이아웃이 soft wrap 하게 한다.
+        if node.node_type in {"Passage", "Choice", "Question"}:
             text = re.sub(r"[\r\n]+", " ", text)
             text = re.sub(r" {2,}", " ", text)
         starts = bracket_labels(node.metadata, starts_only=True)

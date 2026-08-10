@@ -16,13 +16,39 @@ def test_past_hayeot_and_ieot():
 
 
 def test_jyeot_not_jayeot():
-    """졌 = ㅈ+ㅕ+ㅆ. 자(.)+였으로 쪼개지 않음."""
-    assert r(".:/") == "졌"
+    """졌 = ㅈ+붙임줄+ㅕ+ㅆ. 자(.)+였으로 쪼개지 않음."""
+    assert hangul_text_to_ascii("졌") == ".-:/"
+    assert r(".-:/") == "졌"
+    assert r(".:/") == "졌"  # 레거시(붙임줄 없음)
     assert r(hangul_text_to_ascii("졌")) == "졌"
     assert r(hangul_text_to_ascii("달라졌는지")) == "달라졌는지"
     assert "자였" not in r(hangul_text_to_ascii("달라졌는지"))
     assert r("j:/") == "하였"  # 하+였 만 예외 유지
     assert r(hangul_text_to_ascii("자음자")) == "자음자"
+
+
+def test_hyeoss_coupling_not_hayeot():
+    """혔 = 245+36+156+34 (j-:/). 하+였(j:/)과 구분."""
+    assert hangul_text_to_ascii("혔") == "j-:/"
+    assert r("j-:/") == "혔"
+    assert r(hangul_text_to_ascii("혔")) == "혔"
+    assert r("j:/") == "하였"
+    assert r(hangul_text_to_ascii("하였")) == "하였"
+
+
+def test_yeoss_coupling_family():
+    """셨·뎠·졌·켰·폈도 초성·ㅕ 사이에 붙임줄을 둔다."""
+    for syl, ascii_expect in (
+        ("셨", ",-:/"),
+        ("뎠", "i-:/"),
+        ("졌", ".-:/"),
+        ("켰", "f-:/"),
+        ("폈", "d-:/"),
+        ("혔", "j-:/"),
+    ):
+        assert hangul_text_to_ascii(syl) == ascii_expect, syl
+        assert r(ascii_expect) == syl, syl
+        assert r(hangul_text_to_ascii(syl)) == syl, syl
 
 
 def test_hyeo_not_confused_with_hayeot():

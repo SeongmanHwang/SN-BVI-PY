@@ -65,7 +65,7 @@ def _flatten_passage_newlines(
     text: str,
     roman_mask: list[bool] | None,
 ) -> tuple[str, list[bool] | None]:
-    """Passage soft wrap 전: 하드 개행을 공백으로 바꿔 한 흐름으로 만든다."""
+    """Passage/Choice/Question soft wrap 전: 하드 개행을 공백으로 바꿔 한 흐름으로 만든다."""
     if not text or ("\n" not in text and "\r" not in text):
         return text, roman_mask
     out_chars: list[str] = []
@@ -290,9 +290,9 @@ class RuleBrailleLayoutEngine:
             roman_mask = _sequence_roman_mask(seq, ascii_text)
             indent = _indent_for(node_type, prof)
             preformatted = bool(seq.metadata.get("preformatted"))
-            # Passage: translator가 개행을 공백으로 합치는 것이 정석이지만,
-            # 시퀀스에 남은 \n 도 soft wrap 전에 한 흐름으로 만든다.
-            if node_type == "Passage" and not preformatted:
+            # Passage/Choice/Question: translator가 개행을 공백으로 합치는
+            # 것이 정석이지만, 시퀀스에 남은 \n 도 soft wrap 전에 한 흐름으로.
+            if node_type in {"Passage", "Choice", "Question"} and not preformatted:
                 ascii_text, roman_mask = _flatten_passage_newlines(
                     ascii_text, roman_mask
                 )
