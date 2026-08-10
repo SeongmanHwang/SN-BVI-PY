@@ -1,4 +1,4 @@
-"""행을 문단/블록으로 묶는다. 구조 표식·간격·열·헤더/푸터를 함께 본다."""
+"""행을 문단/블록으로 묶는다. 구조 표식·간격·문단 구분·열·헤더/푸터를 함께 본다."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ _BLOCK_START = re.compile(
     r"|[①②③④⑤]"
     r"|[1-5]\s*[\)］\]]"
     r"|[ㄱㄴㄷㄹㅁ]\s*[\.．]"
-    r"|〈\s*보\s*기\s*〉|<\s*보\s*기\s*>|【\s*보\s*기\s*】"
+    r"|〈\s*보\s*기\s*\d*\s*〉|<\s*보\s*기\s*\d*\s*>|【\s*보\s*기\s*\d*\s*】"
     r"|━{5,}|─{5,}|_{5,}|={5,}"
     r")"
 )
@@ -73,6 +73,25 @@ def _starts_new_block(text: str) -> bool:
     return bool(_BLOCK_START.match(text or ""))
 
 
+def _paragraph_boundary(
+    prev: PdfLine,
+    line: PdfLine,
+    *,
+    gap: float,
+    median_h: float,
+) -> bool:
+    """문단 구분: 왼쪽 정렬 복귀 + 중간 세로 간격으로 새 블록.
+
+    제품 대상은 Passage(및 Unknown 재분류 전 무태그 본문).
+    Prompt/Paragraph는 문단 구분 대상이 아니며, Exam 소속 게이트는 후속 과제.
+    (구칭: 내어쓰기 — 구조 표식·큰 gap에 안 걸린 슬롯만 담당.)
+    """
+    # 유효 조건: x0이 8pt 이상 왼쪽이고 0.5h < gap (큰 gap은 호출 전에 처리됨)
+    if line.bbox[0] + 8 >= prev.bbox[0]:
+        return False
+    return gap > median_h * 0.5
+
+
 def build_blocks(
     lines: list[PdfLine],
     page_number: int,
@@ -108,9 +127,8 @@ def build_blocks(
                 new_block = True
             elif gap > max_gap:
                 new_block = True
-            elif line.bbox[0] + 8 < prev.bbox[0] and gap > median_h * 0.25:
-                if _starts_new_block(line.text) or gap > median_h * 0.5:
-                    new_block = True
+            elif _paragraph_boundary(prev, line, gap=gap, median_h=median_h):
+                new_block = True
 
             if new_block:
                 groups.append(current)

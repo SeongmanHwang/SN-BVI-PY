@@ -118,7 +118,8 @@ def test_bracket_tags_become_common_exam_metadata():
     assert passages[1].metadata["bracket_end_labels"] == ["[A]"]
 
 
-def test_header_flushes_group():
+def test_header_footer_soft_keep_group():
+    """Header/Footer는 root에만 두고 PassageGroup 상태는 유지한다."""
     blocks = [
         _block("h", "국어 영역", order=0, tags=["Header"]),
         _block("g", "[1~2] 다음", order=1, tags=["PassageGroup"]),
@@ -127,4 +128,37 @@ def test_header_flushes_group():
     ]
     exam = RuleExamStructureBuilder().build(_doc(blocks))
     types = [c.node_type for c in exam.root.children]
-    assert types == ["Header", "PassageGroup", "Footer"]
+    # 그룹은 문서 끝 flush로 root에 올라오므로 Footer 뒤에 올 수 있다
+    assert types == ["Header", "Footer", "PassageGroup"]
+    group = next(c for c in exam.root.children if c.node_type == "PassageGroup")
+    assert [c.node_type for c in group.children] == ["Passage"]
+
+
+def test_passage_continues_across_footer_header():
+    """쪽 장식 뒤에도 같은 PassageGroup에 지문이 이어진다."""
+    page1 = [
+        _block("g", "[24~27] 다음", order=0, tags=["PassageGroup"], page=1),
+        _block("p1", "지문 앞부분", order=1, page=1),
+        _block("f", "8", order=2, tags=["Footer"], page=1),
+    ]
+    page2 = [
+        _block("h", "국어 영역", order=0, tags=["Header"], page=2),
+        _block("p2", "지문 이어쓰기", order=1, page=2),
+        _block("q", "24. 물음", order=2, tags=["Question"], page=2),
+    ]
+    doc = PdfDocumentStructure(
+        source_path="mock.pdf",
+        page_count=2,
+        pages=[
+            PdfPageStructure(page_number=1, width=595, height=842, blocks=page1),
+            PdfPageStructure(page_number=2, width=595, height=842, blocks=page2),
+        ],
+    )
+    exam = RuleExamStructureBuilder().build(doc)
+    groups = [c for c in exam.root.children if c.node_type == "PassageGroup"]
+    assert len(groups) == 1
+    passages = [c for c in groups[0].children if c.node_type == "Passage"]
+    questions = [c for c in groups[0].children if c.node_type == "Question"]
+    assert [p.source_range.raw_text for p in passages] == ["지문 앞부분", "지문 이어쓰기"]
+    assert len(questions) == 1
+    assert not exam.unclassified_ids

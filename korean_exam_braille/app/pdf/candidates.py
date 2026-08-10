@@ -15,8 +15,9 @@ _CHOICE = re.compile(
     r")"
 )
 
-_EXAMPLE = re.compile(r"〈\s*보\s*기\s*〉|<\s*보\s*기\s*>|【\s*보\s*기\s*】")
-_FOOTNOTE = re.compile(r"(?:^|\n)\s*\*")
+_EXAMPLE = re.compile(
+    r"〈\s*보\s*기\s*\d*\s*〉|<\s*보\s*기\s*\d*\s*>|【\s*보\s*기\s*\d*\s*】"
+)
 _END = re.compile(r"시험이\s*끝났|문제지.*거두|수고하셨")
 
 
@@ -52,9 +53,7 @@ def detect_block_candidates(
     if _EXAMPLE.search(text):
         tags.append("ExampleBox")
 
-    if _FOOTNOTE.search(text):
-        tags.append("Footnote")
-
+    # Footnote 미사용: `*` 줄은 본문(Passage 등)으로 부착
     if _END.search(text):
         tags.append("EndNotice")
 

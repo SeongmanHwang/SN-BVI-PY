@@ -81,4 +81,6 @@ def test_detect_candidates():
     assert "Question" in detect_block_candidates("16. 발문입니다")
     assert "Choice" in detect_block_candidates("① 보기")
     assert "ExampleBox" in detect_block_candidates("〈보기〉")
+    assert "ExampleBox" in detect_block_candidates("<보기2>")
+    assert "ExampleBox" in detect_block_candidates("<보기1>")
     assert "PassageGroup" in detect_block_candidates("[1~3] 다음 글을 읽고")

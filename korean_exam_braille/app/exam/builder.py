@@ -29,7 +29,6 @@ def _primary_tag(block: PdfBlock) -> str | None:
         "TableAsset",
         "FigureAsset",
         "ExampleBox",
-        "Footnote",
     )
     for name in priority:
         if name in tags:
@@ -176,7 +175,13 @@ class RuleExamStructureBuilder:
                 continue
             tag = _primary_tag(block)
 
-            if tag in {"Header", "Footer", "EndNotice"}:
+            if tag in {"Header", "Footer"}:
+                # soft keep: 쪽 장식은 root에만 두고 PassageGroup·문항 컨텍스트는 유지
+                # (페이지를 넘는 지문/보기/선택지 이어쓰기). 새 [N~M]·문서 끝이 닫는 지점.
+                root_children.append(_node_from_block(block, tag, confidence=0.9))
+                continue
+
+            if tag == "EndNotice":
                 flush_group()
                 orphan_question = None
                 root_children.append(_node_from_block(block, tag, confidence=0.9))
@@ -239,13 +244,6 @@ class RuleExamStructureBuilder:
                     root_children.append(
                         _node_from_block(block, "FigureAsset", confidence=0.9)
                     )
-                continue
-
-            if tag == "Footnote":
-                if group is not None:
-                    group.node.children.append(_node_from_block(block, "Footnote"))
-                else:
-                    root_children.append(_node_from_block(block, "Footnote"))
                 continue
 
             attach_body(block)
