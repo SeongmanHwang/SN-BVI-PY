@@ -9,6 +9,14 @@ from pathlib import Path
 from korean_exam_braille.app.daisy.exporter import ExamDtbookExporter
 from korean_exam_braille.app.daisy.ports import DtbookExporter
 from korean_exam_braille.app.exam.bracket_metadata import bracket_labels
+from korean_exam_braille.app.exam.indent_profile import (
+    analyze_passage_group_indent,
+    build_block_line_ids_index,
+    build_line_x0_index,
+)
+from korean_exam_braille.app.exam.passage_indent_config import (
+    DEFAULT_PASSAGE_INDENT_GENRE_CONFIG,
+)
 from korean_exam_braille.app.exam.models import ExamDocument
 from korean_exam_braille.app.exam.tree_text import format_exam_summary, format_exam_tree
 from korean_exam_braille.app.pdf.display_text import format_page_text_for_display
@@ -332,6 +340,10 @@ class ConversionWorkspace:
 
     def exam_tree_nodes(self) -> dict[str, object]:
         """접근성 트리용 JSON (PDF 연동 메타 포함)."""
+        pdf = self.service.document
+        line_x0 = build_line_x0_index(pdf) if pdf is not None else {}
+        block_line_ids = build_block_line_ids_index(pdf) if pdf is not None else {}
+        indent_cfg = DEFAULT_PASSAGE_INDENT_GENRE_CONFIG
 
         def walk(node) -> dict[str, object]:
             raw = (node.source_range.raw_text or "").replace("\n", " ").strip()
@@ -344,7 +356,34 @@ class ConversionWorkspace:
             brackets = bracket_labels(node.metadata)
             if brackets:
                 label = f"{label} · 구간 {', '.join(brackets)}"
-            return {
+
+            indent_debug: dict[str, object] | None = None
+            if node.node_type == "PassageGroup" and line_x0:
+                analysis = analyze_passage_group_indent(
+                    node,
+                    line_x0=line_x0,
+                    block_line_ids=block_line_ids,
+                    config=indent_cfg,
+                )
+                if analysis is not None and analysis.line_count:
+                    label = f"{label} · {analysis.mode_b_label_suffix()}"
+                    indent_debug = {
+                        "genre": analysis.genre,
+                        "sum_r": analysis.sum_r,
+                        "sum_l": analysis.sum_l,
+                        "non_r1_runs": analysis.non_r1_runs,
+                        "line_count": analysis.line_count,
+                        "profile": analysis.profile,
+                        "config": {
+                            "x0_epsilon": indent_cfg.x0_epsilon,
+                            "poetry_max_l_sum": indent_cfg.poetry_max_l_sum,
+                            "dialogue_r_lt_l_factor": indent_cfg.dialogue_r_lt_l_factor,
+                            "ignore_r_run_at_least": indent_cfg.ignore_r_run_at_least,
+                            "novel_min_non_r1_runs": indent_cfg.novel_min_non_r1_runs,
+                        },
+                    }
+
+            payload: dict[str, object] = {
                 "id": node.id,
                 "type": node.node_type,
                 "label": label,
@@ -353,6 +392,9 @@ class ConversionWorkspace:
                 "block_ids": list(node.source_range.block_ids),
                 "children": [walk(c) for c in node.children],
             }
+            if indent_debug is not None:
+                payload["indent_debug"] = indent_debug
+            return payload
 
         exam = self.exam_document()
         return {

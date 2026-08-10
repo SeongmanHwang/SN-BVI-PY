@@ -127,8 +127,9 @@ def build_blocks(
                 new_block = True
             elif gap > max_gap:
                 new_block = True
-            elif _paragraph_boundary(prev, line, gap=gap, median_h=median_h):
-                new_block = True
+            # 문단 구분 일시 비활성 — Mode B에서 PassageGroup L/R 요약 관찰용
+            # elif _paragraph_boundary(prev, line, gap=gap, median_h=median_h):
+            #     new_block = True
 
             if new_block:
                 groups.append(current)
