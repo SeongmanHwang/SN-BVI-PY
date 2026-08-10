@@ -162,7 +162,7 @@
 | Header 등 `preformatted` | 줄 단위 유지 | wrap 없음 |
 
 - 장르·문단 나눔: Exam 빌드 끝 `apply_genre_paragraph_splits` — PassageGroup에 `indent_genre` 부여 후 **Passage로 전파**.
-- 시: 문단 재분할 없음. 비문학/대화문/소설: 들여쓰기(R)·따옴표 규칙으로 Passage 재분할 (`genre_paragraph_split`, `indent_profile`).
+- 시: 문단 재분할 없음. 비문학/대화문/소설: 들여쓰기(R)·따옴표 규칙으로 Passage 재분할 (`genre_paragraph_split`, `indent_profile`). 대화문은 내어쓰기(왼쪽)뿐 아니라 **연속 L(한 줄 대사)** 도 새 문단.
 - 단별 상대 x0: 좌·우 혼입 PassageGroup에서 오른쪽이 전부 R로 잡히지 않게 `column_relative_x0s`.
 
 테스트: `tests/layout/test_engine.py`, `tests/exam/test_genre_paragraph_split.py`, `test_indent_profile.py`.

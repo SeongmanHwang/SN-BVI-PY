@@ -2,7 +2,7 @@
 
 시: 나눔 없음 (자연 블록 유지)
 비문학: 들여쓰기(R) 시작 줄에서 새 문단
-대화문: 내어쓰기(직전 행보다 왼쪽)에서 새 문단
+대화문: 내어쓰기(직전보다 왼쪽) 또는 연속 L에서 새 문단
 소설: 들여쓰기면 문단 시작 — 따옴표면 이어진 R까지, 아니면 이어진 L까지
 """
 
@@ -84,13 +84,22 @@ def _split_starts_dialogue(
     *,
     config: PassageIndentGenreConfig,
 ) -> list[int]:
-    """내어쓰기: 직전 행보다 epsilon 이상 왼쪽이면 새 문단."""
+    """대화문 문단 시작.
+
+    - 직전 행보다 epsilon 이상 왼쪽(내어쓰기)이면 새 문단
+    - **같은 마진 L이 연속**이면(한 줄 대사 연속) 새 문단
+      — 이전 규칙만으로는 L100→L100이 합쳐짐
+    """
     if not x0s:
         return []
     eps = config.x0_epsilon
+    levels = classify_indent_levels(x0s, config=config)
     starts = [0]
     for i in range(1, len(x0s)):
         if x0s[i] + eps < x0s[i - 1]:
+            starts.append(i)
+            continue
+        if levels[i] == "L" and levels[i - 1] == "L":
             starts.append(i)
     return starts
 

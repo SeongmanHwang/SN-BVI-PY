@@ -92,9 +92,43 @@ def test_dialogue_splits_on_outdent():
         config=CFG,
         id_prefix="g",
     )
-    assert len(out) == 2
+    # R블록 1개 + 연속 L은 줄마다 문단 → 3
+    assert len(out) == 3
     assert "들여쓴말" in (out[0].source_range.raw_text or "")
-    assert "내어쓴새말" in (out[1].source_range.raw_text or "")
+    assert "계속" in (out[0].source_range.raw_text or "")
+    assert (out[1].source_range.raw_text or "").strip() == "내어쓴새말"
+    assert (out[2].source_range.raw_text or "").strip() == "계속2"
+
+
+def test_dialogue_consecutive_l_one_line_paragraphs_split():
+    """한 줄짜리 L 문단이 연속이면 합치지 않는다."""
+    lines = {
+        "l0": _line("l0", "첫대사", 100.0),
+        "l1": _line("l1", "둘째대사", 100.0),
+        "l2": _line("l2", "셋째대사", 100.0),
+    }
+    block_line_ids = {"b1": ["l0", "l1", "l2"]}
+    passages = [
+        ExamNode(
+            id="p0",
+            node_type="Passage",
+            source_range=SourceRange(block_ids=["b1"], raw_text="x", page_number=1),
+        )
+    ]
+    out = resplit_passage_run(
+        passages,
+        genre=CFG.label_dialogue,
+        lines_by_id=lines,
+        block_line_ids=block_line_ids,
+        config=CFG,
+        id_prefix="g",
+    )
+    assert len(out) == 3
+    assert [ (p.source_range.raw_text or "").strip() for p in out ] == [
+        "첫대사",
+        "둘째대사",
+        "셋째대사",
+    ]
 
 
 def test_poetry_does_not_split():
