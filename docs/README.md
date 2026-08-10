@@ -5,7 +5,7 @@
 | 문서 | 내용 |
 |------|------|
 | [architecture.md](architecture.md) | 설계 계층, 파이프라인, 모듈 역할, 단계별 알고리즘 |
-| [local_translation_rules.md](local_translation_rules.md) | 이 프로그램만의 점역·PDF 추출 관례 (동일 셀 구분·로마·원문자·표·밑줄 등) |
+| [local_translation_rules.md](local_translation_rules.md) | **텍스트 추출·점역 로컬 규칙 본편** (PDF 순서, 종성/구두, 한자, 장르·개행, 로마·원문자 등) |
 | [ui_shell.md](ui_shell.md) | 제품 모드(웹 사용자·개발자 A/B), 세션 경계·a11y·체크리스트 |
 | [reverse_translation.md](reverse_translation.md) | 역점역 모듈 구조·처리 순서·시험지 토큰·테스트 |
 | [quality_loop.md](quality_loop.md) | 참고 BRF 정합을 위한 개발·테스트 루프 (문서 수동 편집 최소화) |

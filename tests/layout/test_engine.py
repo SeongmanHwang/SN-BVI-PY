@@ -6,7 +6,14 @@ from korean_exam_braille.app.layout.models import LayoutProfile
 from korean_exam_braille.app.layout.serializer import AsciiBrfSerializer
 
 
-def _seq(ascii_text: str, node_type: str, node_id: str = "n1") -> BrailleSequence:
+def _seq(
+    ascii_text: str,
+    node_type: str,
+    node_id: str = "n1",
+    **meta: object,
+) -> BrailleSequence:
+    metadata: dict[str, object] = {"ascii": ascii_text, "node_type": node_type}
+    metadata.update(meta)
     return BrailleSequence(
         source_node_id=node_id,
         tokens=[
@@ -17,7 +24,7 @@ def _seq(ascii_text: str, node_type: str, node_id: str = "n1") -> BrailleSequenc
                 metadata={"ascii": ascii_text},
             )
         ],
-        metadata={"ascii": ascii_text, "node_type": node_type},
+        metadata=metadata,
     )
 
 
@@ -253,4 +260,39 @@ def test_choice_and_question_newlines_flatten_before_32_wrap():
         ]
         assert len(body) == 1, ntype
         assert "aaaa bbbb" in body[0], ntype
+
+
+def test_poetry_passage_keeps_hard_newlines():
+    """시 장르 Passage는 PDF 행 개행을 유지하고 행별로 soft wrap 한다."""
+    from korean_exam_braille.app.braille.translator import TableBrailleTranslator
+    from korean_exam_braille.app.exam.models import ExamNode, SourceRange
+
+    ink = "짧은가\n짧은나\n짧은다"
+    node = ExamNode(
+        id="poem1",
+        node_type="Passage",
+        source_range=SourceRange(page_number=1, block_ids=["b1"], raw_text=ink),
+        metadata={"indent_genre": "시"},
+    )
+    seq = TableBrailleTranslator().translate_node(node)
+    assert seq.metadata.get("keep_hard_newlines") is True
+    assert "\n" in (seq.metadata.get("ascii") or "")
+
+    eng = RuleBrailleLayoutEngine()
+    profile = LayoutProfile(cells_per_line=32, paragraph_indent=2, lines_per_page=26)
+    doc = eng.layout(
+        [
+            _seq(
+                "aaaa\nbbbb\ncccc",
+                "Passage",
+                keep_hard_newlines=True,
+                indent_genre="시",
+            )
+        ],
+        profile=profile,
+    )
+    body = [ln.ascii_text for ln in doc.pages[0].lines if (ln.ascii_text or "").strip()]
+    assert len(body) == 3
+    assert all(row.startswith("  ") for row in body)
+    assert [row.strip() for row in body] == ["aaaa", "bbbb", "cccc"]
 

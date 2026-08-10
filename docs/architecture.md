@@ -70,50 +70,50 @@ PDF 파일
 
 ### 4.1 PDF (`pdf/`)
 
-1. **추출** (`extractor`): PyMuPDF로 페이지 렌더·문자 스팬(좌표·텍스트) 수집.  
-   현재는 텍스트·굵기 중심. **밑줄 등 강조는 미수집**이며, 장기적으로는 안내 삽입 계층에서 점자 추가 정보로 다룬다 → [guidance_policy.md](guidance_policy.md) «원문 시각 강조».
-2. **행** (`line_builder`): y 근접·x 순으로 스팬을 행으로 묶음.
-3. **레이아웃 프로필** (`layout_profile`): 면별 다단·여백·헤더/푸터 대역 추정.
-4. **블록** (`block_builder`): 행을 문단/구조 단위로 병합.  
-   - 새 블록 시작 휴리스틱: `[N~M]`, `N.`, ①–⑤, 〈보기〉, 긴 구분선 등 (`_BLOCK_START`).
-5. **읽기 순서** (`reading_order`): 열·수직 순으로 `reading_order` 부여.
-6. **후보 태그** (`candidates`): `common.patterns` 정규식·위치로 Header/Question/Choice/PassageGroup 등 `candidate_tags` 부여.
+1. **추출** (`extractor`): PyMuPDF `rawdict`로 문자 스팬(좌표·텍스트·`char_bboxes`) 수집.
+2. **벡터 표·래스터 그림·밑줄·꺾쇠** (`tables`, `figures`, `emphasis`, `bracket_groups`):
+   도면·이미지·짧은 가로선·여백 `[A]` 기하를 페이지 구조에 반영.
+3. **행** (`line_builder`): 열·y 근접으로 줄을 묶고 `<u>…</u>` 직렬화.
+4. **그래픽 선형화** (`graphic_linearize`): 원문자 전용 행 병합, 표/그림/박스 표선 승격.
+5. **중략 줄거리** (`plot_summary`): 글꼴 런 끝에 `[줄거리 끝]` 삽입.
+6. **레이아웃 프로필** (`layout_profile`): 머리/꼬리 밴드·2단 `column_cut_x`.
+7. **블록·읽기 순서·후보 태그** (`block_builder`, `reading_order`, `candidates`).
 
-진단 UI는 **읽기 전용**이다. 병합·분할·태그 덮어쓰기는 제품 UI에서 제거했고, `PdfStructureService`·테스트에만 남는다. **제품 목표는 이 단계 자동 정확도를 올려 UI 수정을 불필요하게 하는 것**이다.
+상세 순서·표는 [local_translation_rules.md](local_translation_rules.md) §B.  
+진단 UI는 **읽기 전용**이다. **제품 목표는 이 단계 자동 정확도를 올려 UI 수정을 불필요하게 하는 것**이다.
 
 ### 4.2 Exam (`exam/`)
 
 `RuleExamStructureBuilder`:
 
 1. 페이지·`reading_order` 순으로 블록 순회.
-2. 블록의 tags/candidate_tags에서 우선순위로 대표 태그 선택 (Header > … > Question > Choice …).
-3. 상태 기계적으로 PassageGroup / Question / Choice / ExampleBox 등을 트리에 부착.
-4. `[N~M]`·문항 번호(`common.patterns`)로 메타데이터(`question_number` 등) 채움.
-5. 지문↔문항 등 `ExamRelation` 생성.
+2. 후보 태그 우선순위로 PassageGroup / Question / Choice / ExampleBox 등 부착.
+3. `[N~M]`·문항 번호로 메타데이터 채움, 지문↔문항 `ExamRelation` 생성.
+4. **`apply_genre_paragraph_splits`**: 들여쓰기로 장르(시·대화문·소설·비문학) 판정,
+   장르별 Passage 문단 재분할, Passage에 `indent_genre` 전파 (시는 개행·재분할 보존).
 
-`RuleExamStructureValidator`: 문항 수·선택지 개수 등 전역 경고.
+`RuleExamStructureValidator`: 문항 수·선택지 개수 등 전역 경고.  
+장르·개행 관례: [local_translation_rules.md](local_translation_rules.md) §A-8 · §C.
 
 ### 4.3 점역 (`braille/`)
 
 `TableBrailleTranslator`:
 
-1. Exam 트리를 순회하며 노드 텍스트를 토큰화.
-2. 한글: 음절 분해 → 초·중·종 + 약자/약어 표 (`common.korean_tables`, CV/VC, 된소리 등) → ASCII 셀.
-3. 시험 특수 형태: `[N~M]` → `82#…`, `N.` → `#x4`, ① → `#1` 등 (국내 참고 BRF 관례에 맞춤).
-4. 출력: `BrailleSequence` 목록 (노드 타입·source id 메타 포함).
+1. Exam 노드 텍스트 → (한자 음독/병기 접기) → 한글 음절·약자·시험 토큰 → ASCII 셀.
+2. 로컬 셀 충돌·로마자·원문자 등은 [local_translation_rules.md](local_translation_rules.md) §A.
+3. Passage/Choice/Question은 하드 개행을 공백으로 합침. **시**(`indent_genre`)만 시행 유지.
+4. 출력: `BrailleSequence` (node_type · indent_genre · keep_hard_newlines 등).
 
-역점역은 `brf/reverse_translator` (Inspector·내용 비교용). **모듈 구조·처리 순서·시험지 토큰·테스트 목록은 [reverse_translation.md](reverse_translation.md).**  
-요약: 복합 문장부호 최장 일치 → 온표/수표/로마자 상태 → 된소리 → 약자 → 음절 분석이며, 미인식 셀은 `<U:…>`로 남긴다. 로마자 모드는 공백·괄호를 유지하고, 대문자 약어 뒤 한글 조사에서만 종료한다. **정합의 최종 척도는 ASCII 셀 비교**이지 역점역 유사도가 아니다.
+역점역: [reverse_translation.md](reverse_translation.md). **최종 정합 척도는 ASCII 셀 비교**.
 
 ### 4.4 레이아웃 (`layout/`)
 
-`RuleBrailleLayoutEngine` + `LayoutProfile`:
+`RuleBrailleLayoutEngine` + `LayoutProfile` (기본 32셀×26줄):
 
-1. 시퀀스 ASCII를 노드 타입별 들여쓰기로 배치.
-2. 줄 폭 초과 시 셀 단위 줄바꿈 (`_wrap_ascii`).
-3. 면 높이 초과 시 새 면(폼피드).
-4. 국내 관례 구분선 `=ggg…=` 삽입.
-5. 머리말: 참고 BRF에 맞춘 줄 분리·가운데 패딩 (`header_format` 등).
+1. 노드 타입별 들여쓰기.
+2. 산문 등: 남은 `\n`도 평탄 후 soft wrap. **시**: 하드 개행 유지·행별 wrap.
+3. 로마자 구간 줄바꿈 시 `0` 재삽입 (`roman_mask`).
+4. 면 분할·구분선·머리말 패딩 (`header_format`).
 
 `AsciiBrfSerializer`: 면을 `\x0c`로 이어 BRF 텍스트 생성.
 

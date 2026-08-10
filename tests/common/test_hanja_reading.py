@@ -26,17 +26,24 @@ def test_redundant_paren_gloss_collapsed():
 
 
 def test_dueum_beop_collapses_paren_gloss():
-    """병기 비교에 두음법칙 — 노모(로모)·이론(리론)·여자(녀자)."""
+    """한글(한자) 병기만 두음법칙 — 한자(한글)은 완전 일치만."""
     assert apply_dueum_beop("로모") == "노모"
     assert apply_dueum_beop("리론") == "이론"
     assert apply_dueum_beop("녀자") == "여자"
     assert apply_dueum_beop("량심") == "양심"
 
+    # 한글(한자): 두음법칙 동등 → 접기
     assert replace_hanja_with_reading("노모(老母)") == "노모"
     assert replace_hanja_with_reading("로모(老母)") == "노모"
     assert replace_hanja_with_reading("이론(理論)") == "이론"
     assert replace_hanja_with_reading("여자(女子)") == "여자"
     assert replace_hanja_with_reading("역사(歷史)") == "역사"
+
+    # 한자(한글): 완전 일치만 (老母→로모 ≠ 노모 → 유지)
+    assert replace_hanja_with_reading("老母(노모)") == "로모(노모)"
+    assert replace_hanja_with_reading("老母(로모)") == "로모"
+    assert replace_hanja_with_reading("理論(이론)") == "리론(이론)"
+    assert replace_hanja_with_reading("理論(리론)") == "리론"
 
     # 두음법칙와 무관하면 접지 않음
     assert "(" in replace_hanja_with_reading("노모(부모)")

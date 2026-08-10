@@ -167,6 +167,7 @@ def _passage_node_from_lines(
     node_id: str,
     bracket_starts: dict[str, str] | None = None,
     bracket_ends: dict[str, str] | None = None,
+    indent_genre: str | None = None,
 ) -> ExamNode:
     text = "\n".join(r.line.text for r in rows if r.line.text is not None)
     block_ids = list(dict.fromkeys(r.block_id for r in rows))
@@ -190,6 +191,8 @@ def _passage_node_from_lines(
         "paragraph_split": True,
         "line_ids": [r.line.id for r in rows],
     }
+    if indent_genre:
+        meta["indent_genre"] = indent_genre
     tags: list[str] = []
     if labels:
         meta["bracket_labels"] = labels
@@ -254,6 +257,9 @@ def resplit_passage_run(
 ) -> list[ExamNode]:
     """연속 Passage 노드들을 장르 규칙으로 재분할. 시만 원본 유지."""
     if genre == config.label_si or not passages:
+        for p in passages:
+            if p.node_type == "Passage":
+                p.metadata["indent_genre"] = genre
         return list(passages)
 
     rows = _collect_passage_lines(
@@ -292,6 +298,7 @@ def resplit_passage_run(
                 node_id=f"{id_prefix}-p{idx}",
                 bracket_starts=bracket_starts,
                 bracket_ends=bracket_ends,
+                indent_genre=genre,
             )
         )
     return out
@@ -367,6 +374,10 @@ def apply_genre_paragraph_splits(
                 )
                 i = j
             node.children = new_children
+            # 재분할·시 원본 모두 Passage에 장르를 남겨 점역이 개행 정책을 고르게 한다.
+            for child in node.children:
+                if child.node_type == "Passage":
+                    child.metadata.setdefault("indent_genre", analysis.genre)
         for child in node.children:
             walk(child)
 

@@ -37,16 +37,26 @@ def test_long_word_question_no_space():
 
 
 def test_question_at_sentence_end():
-    """문장 끝 물음표 왕복. 구관례(공백 없는 ≤2)는 화이트리스트 보조."""
+    """문장 끝 물음표 왕복. ≤2는 점역이 공백을 넣음."""
     assert r(h("까요?")) == "까요?"
     assert r(h("것은?")) == "것은?"
     assert r(h("볼까요?")) == "볼까요?"
     assert r(h("알맞은 것은?")) == "알맞은 것은?"
-    # 구관례: 짧은 어절 + 붙임 8 — 종성 후보가 아니므로 ?
-    assert r(",`<+8") == "까요?"
-    assert r("_sz8") == "것은?"
     assert r(",`<+ 8") == "까요?"
     assert r("_sz 8") == "것은?"
+    # 약자 음절(은=z) 뒤 붙임 8 은 종성 후보가 아님 → 물음표 (구관례)
+    assert r("_sz8") == "것은?"
+
+
+def test_byeot_not_question_mark():
+    """볕 = ㅂ+ㅕ+ㅌ (^:8). 햇벼?로 읽지 않음."""
+    assert h("볕") == "^:8"
+    assert r(h("볕")) == "볕"
+    assert r("^:8") == "볕"
+    assert h("햇볕") == "jr'^:8"
+    assert r(h("햇볕")) == "햇볕"
+    assert r("jr'^:8") == "햇볕"
+    assert r(h("햇볕 볼 일 한 번도 없었을")) == "햇볕 볼 일 한 번도 없었을"
 
 
 def test_tieut_before_underline_stays_jong():
@@ -56,10 +66,10 @@ def test_tieut_before_underline_stays_jong():
 
 
 def test_question_before_underline():
-    """밑줄 표지 앞에서는 물음표 우선 (여는 따옴표로 오인하지 않음)."""
+    """밑줄 표지 앞에서도 공백 구분된 물음표·약자 뒤 8은 ?."""
     assert r(h("것은?<u>다음</u>")) == "것은?<u>다음</u>"
-    assert r("_sz8,-i<[5-'") == "것은?<u>다음</u>"
     assert r("_sz 8,-i<[5-'") == "것은?<u>다음</u>"
+    assert r("_sz8,-i<[5-'") == "것은?<u>다음</u>"
 
 
 def test_midword_tieut_unchanged():

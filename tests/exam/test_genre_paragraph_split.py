@@ -120,6 +120,7 @@ def test_poetry_does_not_split():
         id_prefix="g",
     )
     assert out == passages
+    assert all(p.metadata.get("indent_genre") == CFG.label_si for p in out)
 
 
 def test_novel_quote_keeps_following_indents():

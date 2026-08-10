@@ -5,8 +5,9 @@
 
 1. 한자 단독 → 해당 음(음독)을 한글로 적는다.
 2. 한글·한자 병기(음이 같으면) → 한자 쪽을 생략한다.
-   음 비교 시 **두음법칙**를 적용한다
-   (``노모(老母)`` → 사전이 ``로모``여도 ``노모``로 접기).
+   - **한글(한자)** ``노모(老母)``: 음 비교에 **두음법칙** 적용 → ``노모``
+   - **한자(한글)** ``老母(노모)``: **완전 일치**만 생략 (두음법칙 없음).
+     음독이 ``로모``이면 ``로모(노모)``로 남긴다. ``老母(로모)``만 ``로모``.
 
 예::
 
@@ -14,6 +15,7 @@
     훈몽자회(訓蒙字會) → 훈몽자회
     노모(老母) → 노모
     學校(학교) → 학교
+    老母(노모) → 로모(노모)
 
 ``⠴``(ASCII ``0``) 등을 한자 전환 표로 임의 사용하지 않는다.
 원문에 한자가 있었다는 시각 정보를 점자에 남기는 것은 공식 규정이 아니라
@@ -43,8 +45,10 @@ __all__ = [
     "replace_hanja_with_reading",
 ]
 
-# 병기 접기: 왼쪽·괄호 안 한글이 (두음법칙 포함) 동등이면 왼쪽(정규화)만 남김
-_REDUNDANT_GLOSS = re.compile(r"([가-힣]+)[\(（]([가-힣]+)[\)）]")
+# 병기: 좌·괄호 안 (공백·괄호 제외 연속)
+_PAREN_GLOSS = re.compile(r"([^\s\(\)（）]+)[\(（]([^\s\(\)（）]+)[\)）]")
+# 변환 후 남은 한글(한글) — 완전 일치만
+_REDUNDANT_HANGUL_EXACT = re.compile(r"([가-힣]+)[\(（]\1[\)）]")
 
 # 두음법칙: 단어 첫머리 ㄴ/ㄹ + ㅑㅕㅖㅛㅠㅣ(·ㅒ)
 _IOTIZED_JUNG = frozenset({"ㅑ", "ㅒ", "ㅕ", "ㅖ", "ㅛ", "ㅠ", "ㅣ"})
@@ -119,40 +123,73 @@ def _dueum_first_syllable(ch: str) -> str:
 
 
 def apply_dueum_beop(word: str) -> str:
-    """한글 어절 맨 앞 음절에 두음법칙만 적용 (병기 동등 비교용)."""
+    """한글 어절 맨 앞 음절에 두음법칙만 적용 (한글(한자) 병기 비교용)."""
     if not word:
         return word
     return _dueum_first_syllable(word[0]) + word[1:]
 
 
-def _readings_equivalent(a: str, b: str) -> bool:
+def _readings_equivalent_dueum(a: str, b: str) -> bool:
     if a == b:
         return True
     return apply_dueum_beop(a) == apply_dueum_beop(b)
 
 
-def _collapse_redundant_gloss(match: re.Match[str]) -> str:
+def _is_hangul_run(s: str) -> bool:
+    return bool(s) and all("\uac00" <= ch <= "\ud7a3" for ch in s)
+
+
+def _is_hanja_run(s: str) -> bool:
+    return bool(s) and all(is_cjk_ideograph(ch) for ch in s)
+
+
+def _hanja_run_reading(hanja: str) -> str:
+    parts: list[str] = []
+    for ch in hanja:
+        reading = hanja_reading(ch)
+        parts.append(reading if reading else "/")
+    return "".join(parts)
+
+
+def _collapse_original_gloss(match: re.Match[str]) -> str:
+    """원문 병기: 한글(한자)=두음법칙, 한자(한글)=완전 일치."""
     left, right = match.group(1), match.group(2)
-    if not _readings_equivalent(left, right):
-        return match.group(0)
-    # 교과서 표기에 가깝게 두음법칙 적용형을 남긴다
-    return apply_dueum_beop(left)
+    open_c, close_c = match.group(0)[len(left)], match.group(0)[-1]
+
+    if _is_hangul_run(left) and _is_hanja_run(right):
+        reading = _hanja_run_reading(right)
+        if _readings_equivalent_dueum(left, reading):
+            # 교과서형 두음법칙 표기로 남김 (로모(老母)→노모)
+            return apply_dueum_beop(left)
+        return f"{left}{open_c}{reading}{close_c}"
+
+    if _is_hanja_run(left) and _is_hangul_run(right):
+        reading = _hanja_run_reading(left)
+        if reading == right:
+            return reading
+        return f"{reading}{open_c}{right}{close_c}"
+
+    return match.group(0)
 
 
 def replace_hanja_with_reading(text: str) -> str:
     """한자 단독은 음독으로, 한글·한자 병기는 한자를 생략한다."""
     if not text:
         return text
+    # 1) 병기 패턴을 원문 형태로 먼저 접기 (두음법칙 방향 구분)
+    out = _PAREN_GLOSS.sub(_collapse_original_gloss, text)
+    # 2) 남은 한자 → 음독
     parts: list[str] = []
-    for ch in text:
+    for ch in out:
         if not is_cjk_ideograph(ch):
             parts.append(ch)
             continue
         reading = hanja_reading(ch)
         parts.append(reading if reading else "/")
     out = "".join(parts)
+    # 3) 변환 후 남은 동일 한글(한글)만 완전 일치로 접기
     prev = None
     while prev != out:
         prev = out
-        out = _REDUNDANT_GLOSS.sub(_collapse_redundant_gloss, out)
+        out = _REDUNDANT_HANGUL_EXACT.sub(r"\1", out)
     return out

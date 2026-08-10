@@ -111,6 +111,47 @@ def _flatten_passage_newlines(
     return "".join(collapsed), collapsed_mask
 
 
+def _wrap_ascii_keeping_hard_newlines(
+    text: str,
+    width: int,
+    *,
+    first_indent: int,
+    cont_indent: int = 0,
+    roman_mask: list[bool] | None = None,
+) -> list[str]:
+    """하드 개행은 유지하고, 각 행만 soft wrap 한다 (시 장르)."""
+    if not text:
+        return _wrap_ascii(
+            text,
+            width,
+            first_indent=first_indent,
+            cont_indent=cont_indent,
+            roman_mask=roman_mask,
+        )
+    # \r\n 정규화
+    normalized = text.replace("\r\n", "\n").replace("\r", "\n")
+    rows: list[str] = []
+    pos = 0
+    parts = normalized.split("\n")
+    for idx, part in enumerate(parts):
+        part_mask: list[bool] | None = None
+        if roman_mask is not None:
+            # split이 소비한 개행 1칸을 건너뛰며 마스크를 행 단위로 자른다
+            end = pos + len(part)
+            part_mask = roman_mask[pos:end]
+            pos = end + (1 if idx < len(parts) - 1 else 0)
+        rows.extend(
+            _wrap_ascii(
+                part,
+                width,
+                first_indent=first_indent,
+                cont_indent=cont_indent,
+                roman_mask=part_mask,
+            )
+        )
+    return rows
+
+
 def _indent_for(node_type: str | None, profile: LayoutProfile) -> int:
     # Header는 translator가 이미 들여쓰기·가운데 패딩함
     if node_type == "Header":
@@ -290,15 +331,29 @@ class RuleBrailleLayoutEngine:
             roman_mask = _sequence_roman_mask(seq, ascii_text)
             indent = _indent_for(node_type, prof)
             preformatted = bool(seq.metadata.get("preformatted"))
+            keep_hard = bool(seq.metadata.get("keep_hard_newlines"))
             # Passage/Choice/Question: translator가 개행을 공백으로 합치는
             # 것이 정석이지만, 시퀀스에 남은 \n 도 soft wrap 전에 한 흐름으로.
-            if node_type in {"Passage", "Choice", "Question"} and not preformatted:
+            # 시(keep_hard_newlines)는 시행을 유지한다.
+            if (
+                node_type in {"Passage", "Choice", "Question"}
+                and not preformatted
+                and not keep_hard
+            ):
                 ascii_text, roman_mask = _flatten_passage_newlines(
                     ascii_text, roman_mask
                 )
             # 미리 패딩된 Header는 줄 단위로만 넣고 wrap하지 않음
             if preformatted:
                 rows = ascii_text.split("\n") if ascii_text else [""]
+            elif keep_hard and not preformatted:
+                rows = _wrap_ascii_keeping_hard_newlines(
+                    ascii_text,
+                    prof.cells_per_line,
+                    first_indent=indent,
+                    cont_indent=0,
+                    roman_mask=roman_mask,
+                )
             else:
                 rows = _wrap_ascii(
                     ascii_text,

@@ -63,7 +63,9 @@ flowchart TD
 4. **선택지 항목 표지** — `_0` (⠇⠴) 생략, 번호 뒤 공백 보정
 5. **장식 반복** — 동일 셀 6칸 이상 (`g`/`3`/`7`/`=`/`*`) 스킵
 6. **복합 문장부호** — `PUNCT_MULTI` 최장 일치 (`82`는 지문범위가 아닐 때만 `[`)
-7. **온표** — `=` + 자모 본문 (`ON_SIGN_BODIES`, 종성·초성 별칭)
+7. **온표** — `=` + 자모 본문 (`ON_SIGN_BODIES`, 종성·초성 별칭).
+   본문 직후가 **모음·VC 약자**이면 온표가 아니라 **옹** 약자
+   (`옹호`=`=ju` ≠ `ㅎ오`). 따옴표·공백·드러냄·구두점 뒤 자모는 온표.
 8. **드러냄표** — `7` … `7` → `‘` … `’` (열린 동안 종성 `7` 금지)
 9. **수표** — `#` + `a`–`j`
 10. **로마자 모드** — `0` + `,`/글자; 레거시 `; ,X`  
@@ -77,8 +79,10 @@ flowchart TD
     - **종성 ㅍ vs 마침표** (`4`): 짧은 어절(≤2음절, 조립 중 포함) 뒤
       공백·EOL·밑줄·닫는부호 앞에서 공백 없이 → ㅍ;
       긴 어절(≥3) 뒤 같은 경계에서 → `.`. 점역은 짧은 어절 뒤 `.` 앞에 공백을 넣음.
-    - **종성 ㅌ vs 물음표** (`8`): 문장 끝(공백·EOL·밑줄 `,-`/`-'`)에서
-      단독 어절 또는 흔한 ㅌ받침 음절(같/끝/밑/밭/맡 …) → ㅌ; 그 외 → `?`.
+    - **종성 ㅌ vs 물음표** (`8`): 짧은 어절(≤2음절, 조립 중 포함) 뒤
+      공백·EOL·밑줄·닫는부호 앞에서 공백 없이 → ㅌ;
+      긴 어절(≥3) 뒤 같은 경계에서 → `?`. 점역은 짧은 어절 뒤 `?` 앞에 공백을 넣음.
+      (`햇볕`=`jr'^:8` → 볕; 붙임 `8`을 물음표로 읽지 않음).
     - **종성 ㅋ vs 느낌표** (`6`): 짧은 어절(≤2음절, 조립 중 포함) 뒤
       공백·EOL·밑줄·닫는부호 앞에서 공백 없이 → ㅋ;
       긴 어절(≥3) 뒤 같은 경계에서 → `!`. 점역은 짧은 어절 뒤 `!` 앞에 공백을 넣음.
@@ -151,7 +155,8 @@ flowchart TD
   별도 Exam “상자 모드” 상태 기계는 두지 않음.
 - 한자 전환 표(`⠴`/`0` 전치) — 현행 규정에 일반 한자용 전환 표가 없음.
   정방향은 `common/hanja_reading.py`에서 **단독→음독, 병기→한자 생략**만 수행.
-  병기 생략 시 음 비교에 **두음법칙**를 적용한다 (`노모(老母)` → `노모`).
+  병기: **한글(한자)** 만 두음법칙 동등으로 접고 (`노모(老母)`→`노모`),
+  **한자(한글)** 은 완전 일치만 (`老母(노모)`→`로모(노모)`).
 
 새로운 규칙을 넣을 때는 셀 문법·상태 기계에 넣고, 출력 문자열 치환으로 때우지 않는다.
 
@@ -165,7 +170,12 @@ flowchart TD
 | `tests/brf/test_reverse_punctuation.py` | 따옴표·온표·지문범위 |
 | `tests/brf/test_reverse_brackets.py` | 대괄호·원문자·강조 |
 | `tests/brf/test_reverse_roman_tense.py` | 로마자·된소리 |
-| `tests/brf/test_reverse_past_rare.py` | 하였/졌·귿/옷 |
+| `tests/brf/test_reverse_past_rare.py` | 하였/혔/졌·귿/옷 |
+| `tests/brf/test_exclamation_jong_kieuk.py` | 종성 ㅋ ↔ 느낌표 |
+| `tests/brf/test_reverse_jong_quote_digraph.py` | 겹받침+닫는따옴표 (`많’`) |
+| `tests/brf/test_period_jong_pieup.py` | 종성 ㅍ ↔ 마침표 |
+| `tests/brf/test_reverse_jong_tieut_question.py` | 종성 ㅌ ↔ 물음표 · 햇볕 |
+| `tests/common/test_hanja_reading.py` | 한자 음독·병기(두음법칙) |
 | `tests/brf/test_reverse_jong_comma.py` | 종성·인라인 범위 |
 | `tests/brf/test_reverse_exam_structure.py` | 보기·[N점]·쌍점·표선·`a~e` |
 | `tests/pdf/test_graphic_linearize.py` | ⓐ+`<u>`·박스 표선 직렬화·왕복 |
@@ -176,6 +186,7 @@ flowchart TD
 
 ## 8. 관련 문서
 
-- [architecture.md](architecture.md) §4.3–4.5 — 파이프라인 속 위치
+- [architecture.md](architecture.md) §4.1–4.5 — 파이프라인 속 위치
+- [local_translation_rules.md](local_translation_rules.md) — 추출·점역 로컬 규칙 본편
 - [quality_loop.md](quality_loop.md) — 비교 루프에서 역점역의 역할
 - [question_choice_rules.md](question_choice_rules.md) · [separator_patterns.md](separator_patterns.md) — Phase 0 관례 축적

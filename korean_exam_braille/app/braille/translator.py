@@ -47,6 +47,9 @@ from korean_exam_braille.app.common.plot_summary_markup import (
 )
 from korean_exam_braille.app.common.hanja_reading import replace_hanja_with_reading
 from korean_exam_braille.app.common.opaque_text import replace_opaque_with_slash
+from korean_exam_braille.app.exam.passage_indent_config import (
+    DEFAULT_PASSAGE_INDENT_GENRE_CONFIG,
+)
 
 # 묵자 → ASCII (표 반전). 국내 BRF는 초성 ㄱ을 ` 로 씀.
 _CHO_TO_ASCII: dict[str, str] = {v: k for k, v in CHOSEONG.items()}
@@ -742,7 +745,13 @@ class TableBrailleTranslator:
             )
         # Passage/Choice/Question: PDF 행 개행을 문단 줄바꿈으로 쓰지 않음 —
         # 공백으로 이어 붙여 32셀이 찰 때까지 레이아웃이 soft wrap 하게 한다.
-        if node.node_type in {"Passage", "Choice", "Question"}:
+        # 예외: 시(indent_genre)는 시행 개행을 유지한다.
+        genre = node.metadata.get("indent_genre")
+        keep_hard_newlines = (
+            node.node_type == "Passage"
+            and genre == DEFAULT_PASSAGE_INDENT_GENRE_CONFIG.label_si
+        )
+        if node.node_type in {"Passage", "Choice", "Question"} and not keep_hard_newlines:
             text = re.sub(r"[\r\n]+", " ", text)
             text = re.sub(r" {2,}", " ", text)
         starts = bracket_labels(node.metadata, starts_only=True)
@@ -750,6 +759,10 @@ class TableBrailleTranslator:
         seq = self.translate_text(text)
         seq.source_node_id = node.id
         seq.metadata["node_type"] = node.node_type
+        if isinstance(genre, str) and genre:
+            seq.metadata["indent_genre"] = genre
+        if keep_hard_newlines:
+            seq.metadata["keep_hard_newlines"] = True
         if starts:
             seq.metadata["bracket_start_labels"] = starts
             seq.metadata["bracket_start_ascii"] = [

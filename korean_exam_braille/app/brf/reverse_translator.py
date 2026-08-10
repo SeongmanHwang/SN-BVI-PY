@@ -142,24 +142,6 @@ def _is_period_disambig_boundary(chars: list[str], after_i: int) -> bool:
     return after_i < len(chars) and _starts_closing_multi(chars, after_i)
 
 
-# 종성 ㅌ이 붙었을 때 실제 어휘로 자주 쓰이는 음절 (물음표와 구분)
-_COMMON_TIEUT_SYLLABLES = frozenset(
-    "같겉곁끝밑밭얕옅맡핥숱"
-)
-
-
-def _prefer_jong_tieut(cho: str, jung: str, out: list[str] | None) -> bool:
-    """짧은 어절(≤2) 문장 끝 셀 8을 종성 ㅌ으로 볼지 (물음표 보조 규칙).
-
-    - 지금 조립 중인 음절만으로 된 어절(밭/끝/밑) → ㅌ
-    - 흔한 ㅌ받침 음절(같/맡 등) → ㅌ
-    - 그 외(까요?/것은? 등) → 물음표 (정방향은 ≤2면 공백+8)
-    """
-    if _out_word_hangul_count(out) == 0:
-        return True
-    return _syllable(cho, jung, "ㅌ") in _COMMON_TIEUT_SYLLABLES
-
-
 _JONG_PUNCT_DISAMBIG_MAX_SYL = 2
 
 
@@ -502,8 +484,9 @@ def _take_final(
     종성 ㅌ과 물음표는 동일 셀(ASCII ``8``):
       - 점역: 두 음절 이하 어절 뒤 물음표 앞에 공백
       - 역점역: 공백·EOL·밑줄·닫는부호 앞에서,
-                짧은 어절(≤2) + 흔한 ㅌ받침/단독 어절 → ㅌ,
-                긴 어절(≥3) 또는 그 외 → 물음표
+                짧은 어절(완성 중 포함 ≤2음절) 뒤 ``8`` → 종성 ㅌ,
+                세 음절 이상 어절 뒤 ``8`` → 물음표
+                (``햇볕`` ``jr'^:8`` → 밭/끝과 같이 ㅌ; ``벼?`` 아님)
 
     종성 ㅋ과 느낌표는 동일 셀(ASCII ``6``):
       - 점역: 두 음절 이하 어절 뒤 느낌표 앞에 공백
@@ -548,15 +531,10 @@ def _take_final(
             return JONGSEONG["4"], i + 1, False
         return ".", i + 1, True
 
-    # 물음표(8) ↔ 종성 ㅌ(8) — 어절 길이 + 화이트리스트 보조
+    # 물음표(8) ↔ 종성 ㅌ(8) — 어절 음절 수로 구분 (ㅍ/마침표와 동일)
     if n == "8" and _is_period_disambig_boundary(chars, i + 1):
         word_syl = _out_word_hangul_count(out) + 1
-        if (
-            word_syl <= _JONG_PUNCT_DISAMBIG_MAX_SYL
-            and cho is not None
-            and jung is not None
-            and _prefer_jong_tieut(cho, jung, out)
-        ):
+        if word_syl <= _JONG_PUNCT_DISAMBIG_MAX_SYL:
             return JONGSEONG["8"], i + 1, False
         return "?", i + 1, True
 
@@ -708,7 +686,13 @@ def _emit_abbrev_cv(
 
 
 def _on_sign_after_ok(chars: list[str], after_i: int) -> bool:
-    """온표 자모 본문 직후가 경계·다음 온표·닫는부호·구두점·다음 음절이면 온표로 인정."""
+    """온표 자모 본문 직후가 경계·다음 온표·닫는부호·구두점이면 온표로 인정.
+
+    직후가 **모음·VC 약자**로 음절을 시작하면 온표가 아니다
+    (``옹호`` ``=ju`` → ``ㅎ오`` 오인 방지). 초성·가류 약자 등 다음 음절은
+    온표로 본다 (``‘ㄴ, ㄹ’`` 의 ``=3"`` — 쉼표 셀이 초성처럼 보여도
+    구두점·다음 자모 경계로 처리).
+    """
     after = _peek(chars, after_i)
     if _is_boundary(after) or after == ON_SIGN or after == "7":
         return True
@@ -718,6 +702,13 @@ def _on_sign_after_ok(chars: list[str], after_i: int) -> bool:
         return True
     if after is not None and _match_punct(chars, after_i) is not None:
         return True
+    # 모음이 바로 이어지면 옹 약자(+다음 음절) 우선
+    if after is not None and (
+        after in JUNGSEONG
+        or after in ABBREV_VC
+        or after in {k[0] for k in JUNGSEONG_DIGRAPHS}
+    ):
+        return False
     if after is not None and _can_begin_syllable(after):
         return True
     return False

@@ -40,3 +40,19 @@ def test_unknown_not_middle_dot():
 def test_ong_abbrev_still_works():
     # 온표 문맥이 아니면 = 은 옹
     assert reverse_translate_line("=") == "옹"
+
+
+def test_ongho_not_read_as_on_sign_hieut():
+    """옹호·옹호하고: =ju… 를 온표+ㅎ+오…로 읽지 않음 (⠿=`=` → 옹)."""
+    from korean_exam_braille.app.braille.translator import hangul_text_to_ascii as h
+
+    assert h("옹호하고") == "=juj`u"
+    assert reverse_translate_line("=juj`u") == "옹호하고"
+    assert reverse_translate_line(h("옹호하고")) == "옹호하고"
+    assert reverse_translate_line(h("옹호")) == "옹호"
+    src = "삶의 태도를 옹호하고 있다."
+    assert reverse_translate_line(h(src)) == src
+    assert (
+        reverse_translate_line('l15w hriu"! =juj`u o/i 4')
+        == "삶의 태도를 옹호하고 있다."
+    )
