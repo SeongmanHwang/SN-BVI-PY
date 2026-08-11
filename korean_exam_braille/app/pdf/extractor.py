@@ -36,6 +36,7 @@ from korean_exam_braille.app.pdf.tables import (
 )
 from korean_exam_braille.app.pdf.plot_summary import annotate_plot_summary_lines
 from korean_exam_braille.app.pdf.reading_order import assign_reading_order
+from korean_exam_braille.app.pdf.side_markers import attach_trailing_side_markers
 
 
 def _is_bold(flags: int, font_name: str) -> bool:
@@ -134,6 +135,7 @@ def build_page_structure(
     # 오른쪽 여백 [A]~[E] 꺾인 괄호 → 행 소속
     assign_lines_to_brackets(lines, bracket_groups)
     blocks = build_blocks(lines, page_number, profile=profile)
+    blocks = attach_trailing_side_markers(blocks, lines)
     assign_reading_order(blocks, profile=profile)
     for block in blocks:
         band = profile.band_of_y(block.bbox[1]) if profile is not None else None

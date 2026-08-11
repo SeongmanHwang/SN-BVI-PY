@@ -75,6 +75,8 @@ class PdfLine:
     reading_order: int = 0
     # 오른쪽 여백 꺾인 괄호 소속 — 예: "[A]"
     bracket_label: str | None = None
+    # 측면 짧은 마커(① 등) — 직렬화 시 행 텍스트 뒤에 붙임
+    trailing_marker: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -85,6 +87,7 @@ class PdfLine:
             "page_number": self.page_number,
             "reading_order": self.reading_order,
             "bracket_label": self.bracket_label,
+            "trailing_marker": self.trailing_marker,
         }
 
     @classmethod
@@ -98,6 +101,7 @@ class PdfLine:
             page_number=int(data["page_number"]),
             reading_order=int(data.get("reading_order", 0)),
             bracket_label=data.get("bracket_label"),
+            trailing_marker=data.get("trailing_marker"),
         )
 
 

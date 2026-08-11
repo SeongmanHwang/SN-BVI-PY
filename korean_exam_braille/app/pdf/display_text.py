@@ -58,6 +58,8 @@ def format_page_text_for_display(page: PdfPageStructure) -> str:
             if text:
                 if line.bracket_label:
                     text = f"{line.bracket_label} {text}"
+                if line.trailing_marker:
+                    text = f"{text} {line.trailing_marker}"
                 line_texts.append(text)
         if line_texts:
             parts.append("\n".join(line_texts))

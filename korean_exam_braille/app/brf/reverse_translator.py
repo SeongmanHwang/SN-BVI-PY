@@ -265,6 +265,9 @@ def _match_punct(chars: list[str], i: int) -> tuple[str, int] | None:
 
     겹받침 ``18``(ㄾ) vs 여는 대괄호 ``82``: 뒤에 ``;0`` 짝이 있으면
     종성 ㄹ + ``[`` 로 나눈다 (``…182…;0``).
+
+    ``78``(``<``) vs 종성 ㅇ+여는 소괄호 ``78'``: 다음에 ``'`` 이면
+    각도괄호가 아니라 ``ㅇ`` + ``(`` 로 나눈다 (``장(``).
     """
     for key, ink in _PUNCT_MULTI_SORTED:
         got = _slice_norm(chars, i, len(key))
@@ -274,6 +277,9 @@ def _match_punct(chars: list[str], i: int) -> tuple[str, int] | None:
             rest = normalize_brf_ascii("".join(chars[i:]))
             if _PASSAGE_RANGE_ASCII.match(rest):
                 continue
+        # 종성 ㅇ(7) + 여는 소괄호(8') — 각도괄호 <(78)가 아님
+        if key == "78" and _peek(chars, i + 2) == "'":
+            continue
         # ,-:/… = ㅅ+붙임줄+모음(셨…). 밑줄 시작(,-)과 충돌하므로,
         # 바로 모음이 오고 닫는 -' 짝이 없으면 음절 조립에 맡긴다.
         if key == ",-":

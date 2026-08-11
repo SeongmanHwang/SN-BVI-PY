@@ -10,6 +10,18 @@ def test_example_box_title():
     assert r("78^u@o07") == "<보기>"
 
 
+def test_jong_ieung_before_open_paren_not_angle_bracket():
+    """장( — 종성 ㅇ(7)+여는괄호(8')를 <(78)로 읽지 않음."""
+    assert hangul_text_to_ascii("장(").endswith("78'")
+    assert r(hangul_text_to_ascii("장(")) == "장("
+    assert r(".78'") == "장("
+    src = "편집부장(‘ㄱ’) 내용을"
+    assert r(hangul_text_to_ascii(src)) == src
+    # 참고 BRF: 괄호 안 ㄱ을 드러냄+온표(7=@7)로 쓴 형태
+    assert r("d*.ob^m.78'7=@7,0 cr+7!") == "편집부장(‘ㄱ’) 내용을"
+    assert "<U:" not in r("d*.ob^m.78'7=@7,0 cr+7!")
+
+
 def test_score_bracket():
     assert "?<U:2>" not in r(hangul_text_to_ascii("[3점]"))
     assert r(hangul_text_to_ascii("[3점]")).replace(" ", "") == "[3점]"

@@ -35,7 +35,7 @@
 
 | 충돌 | 셀 | 점역 (정방향) | 역점역 |
 |------|-----|---------------|--------|
-| 종성 **ㅍ** ↔ 마침표 `.` | `4` (⠲) | 어절 ≤2음절이면 `.` **앞 공백** (`가.` → `$ 4`) | 짧은 어절+붙임 `4`→ㅍ, 긴 어절(≥3)·공백 뒤→`.` |
+| 각도괄호 `<` ↔ 종성 **ㅇ**+`(` | `78` vs `78'` | `<보기>` → `78…07` | **`78'`** 이면 `<`가 아니라 ㅇ+`(` (`장(`) |
 | 줄임표 `…` / `...` | `444` (2-5-6×3) | **항상** 앞 공백 (`꽃이…` → `,@u2o 444`) | `444`→`…` (앞 공백 제거). 구 `o444`도 `…` |
 | 줄임표 `⋯` / `···` | `,,,` (6×3) | 가운뎃점형 (`····`는 빈칸 `"2`×4) | `,,,`→`⋯` |
 | 종성 **ㅌ** ↔ 물음표 `?` | `8` (⠦) | 어절 ≤2음절이면 `?` **앞 공백** (`가?` → `$ 8`, `같`→`$8`) | 짧은 어절+붙임 `8`→ㅌ, 긴 어절(≥3)·공백 뒤→`?` (`햇볕`=`jr'^:8`) |
@@ -232,6 +232,7 @@
       · insert_box_rule_lines      # 큰 박스에 ─ 표선
 11. assign_lines_to_brackets
 12. build_blocks                   # 문항·선택지 등 블록
+12b. attach_trailing_side_markers  # 오른쪽 짧은 ①~⑤ 등을 왼쪽 다행 블록 끝에 붙임
 13. assign_reading_order           # header→본문좌우→footer
 14. detect_block_candidates + TableAsset/FigureAsset
 15. annotate_blocks_with_brackets
@@ -251,6 +252,7 @@
 | **중략 줄거리** | `plot_summary.annotate_plot_summary_lines` | `[중략…줄거리]`/`줄거리]` 표지 행부터 **동일 글꼴 버킷·크기** 연속 런 끝에 `[줄거리 끝]` 삽입. 시작 표지는 원문만. |
 | **원문자 행** | `graphic_linearize.merge_circled_label_lines` | **라벨만** 있는 ⓐⓑ… 행을 한 줄로 합침. 본문 인라인 `ⓐ<u>…</u>`는 옮기지 않음. |
 | **박스 표선** | `boxes` + `insert_box_rule_lines` | 닫힌 큰 프레임에 `─`×16 규칙 줄 삽입(점역 표선). 짧은 빈칸 박스(`[가]`형, 높이 작음)는 표선 생략. |
+| **측면 마커** | `side_markers.attach_trailing_side_markers` | 오른쪽 마커-only(①~⑤·ㄱ.?·ⓐ)를 y겹침·우측 거리로 왼쪽 2~6행 블록의 `trailing_marker`로 붙이고 독립 블록 제거. 본문 있는 선택지·장문 Passage는 제외. |
 | **블록·후보 태그** | `block_builder`, `candidates` | `[N~M]`, `N.`, ①–⑤, 보기 등으로 블록 시작. Header/Footer/Question/Choice/… 후보 태그. |
 | **읽기 순서** | `reading_order` | header → full → left → right → footer. |
 
