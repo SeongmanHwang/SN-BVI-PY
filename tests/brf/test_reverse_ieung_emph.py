@@ -6,11 +6,11 @@ from korean_exam_braille.app.brf.reverse_translator import reverse_translate_lin
 
 
 def test_circled_option_markers_after_ga_not_gang():
-    """가 + ㉢ 점열 `$7=97` 이 강으로 먹히지 않는다."""
+    """가 + ㉢ 점열 `$7=i7` 이 강으로 먹히지 않는다."""
     ink = "㉠묘텅㉡백파가㉢언덕"
     ascii_text = h(ink)
-    assert "77=37" in ascii_text  # 텅 ㅇ + 드러냄
-    assert "$7=97" in ascii_text  # 가 다음 드러냄(종성 없음)
+    assert "77=c7" in ascii_text  # 텅 ㅇ + 드러냄 + 초성 ㄴ
+    assert "$7=i7" in ascii_text  # 가 다음 드러냄(종성 없음)
     assert r(ascii_text) == "‘ㄱ’묘텅‘ㄴ’백파가‘ㄷ’언덕"
 
 
@@ -32,5 +32,5 @@ def test_da_circled_giyeok_not_dang():
 
 def test_proper_double_seven_mieum_option():
     """정상 이중 7(텅 ㅇ + 드러냄)은 그대로."""
-    assert "e+hs77=37" in h("묘텅㉡")
+    assert "e+hs77=c7" in h("묘텅㉡")
     assert r(h("묘텅㉡")) == "묘텅‘ㄴ’"

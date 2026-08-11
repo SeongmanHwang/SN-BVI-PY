@@ -72,8 +72,9 @@ def test_roundtrip_ap_and_period():
 
 
 def test_standalone_14_is_rieul_period_not_rieulpieup():
-    """음절 밖 ⠂⠲(14)·온표 =14 → ㄹ. (겹받침 ㄿ 아님). 받침 ㄿ은 유지."""
-    assert h("ㄹ.") == "=14"
+    """음절 밖 온표+초성 ㄹ+마침표 → ㄹ. / 구 =14·단독 14도 ㄹ. (ㄿ 아님)."""
+    assert h("ㄹ.") == '="4'
+    assert r('="4') == "ㄹ."
     assert r("=14") == "ㄹ."
     assert r("14") == "ㄹ."
     assert r(h("ㄹ.")) == "ㄹ."

@@ -47,9 +47,10 @@ def test_circled_digits():
     for ink, cell in zip("①②③④⑤", "abcde"):
         assert r(f"7#{cell}7") == ink
         assert hangul_text_to_ascii(ink) == f"7#{cell}7"
-    # 참고 시험지: ⠼⠂…⠼⠢
-    for ink, cell in zip("①②③④⑤", "12345"):
+    # 참고 시험지: ⠼⠂…⠼⠲ → ①…④. #5(⠼⠢)는 수식 +
+    for ink, cell in zip("①②③④", "1234"):
         assert r(f"#{cell}") == ink
+    assert r("#5") == "+"
 
 
 def test_choice_item_mark_stripped():
@@ -70,6 +71,17 @@ def test_emphasis_markers_to_underline_tags():
     assert r(hangul_text_to_ascii("<u>차자 표기</u>")) == "<u>차자 표기</u>"
     # ㉠ → 드러냄+자모(‘ㄱ’); 밑줄 구간만 <u>로 복원
     assert "<u>차자 표기</u>" in r(hangul_text_to_ascii("㉠<u>차자 표기</u>"))
+
+
+def test_hangul_indicator_after_circled_latin():
+    """2024 제39항 한글표 ,- : ⓐ + 한글표 + 아직 → ⓐ아직 (사직 아님)."""
+    # 참고 BRF 관례: 7a7,-<.oa
+    assert r("7a7,-<.oa") == "ⓐ아직"
+    # 한글표 없이도 역점역은 가능 (정방향은 표를 안 넣음)
+    assert r("7a7<.oa") == "ⓐ아직"
+    # 셨(ㅅ+붙임+ㅕ+ㅆ)은 유지
+    assert r(",-:/") == "셨"
+    assert hangul_text_to_ascii("셨") == ",-:/"
 
 
 def test_passage_range_not_confused_with_bracket():

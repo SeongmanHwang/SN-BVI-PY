@@ -20,6 +20,7 @@ from korean_exam_braille.app.common.korean_tables import (
     JUNG_INDEX,
     JUNGSEONG,
     JUNGSEONG_DIGRAPHS,
+    MATH_OP_TO_ASCII,
     NUMBER_MAP,
     NUMBER_SIGN,
     ROMAN_END_SIGN,
@@ -138,7 +139,7 @@ _PUNCT_TO_ASCII: dict[str, str] = {
     "—": "--",
     "–": "--",
     "/": "_/",  # 빗금 — 단독 `/`는 ㅖ·ㅆ과 충돌하므로 ⠸⠌
-    "=": "=",
+    # = + − × ÷ ₩ $ 는 MATH_OP_TO_ASCII (수표 # + 본문)
     "*": "99",
     "※": "99",
     "ⓒ": "7c7",
@@ -209,7 +210,7 @@ _CIRCLED_LATIN_CELL = {
     "ⓩ": "z",
 }
 
-# ㉠–㉭ (원문자 ㄱ–ㅎ) → 드러냄+온표자모. 참고 BRF: ㉠차자 → 7=a7,-…-'
+# ㉠–㉭ (원문자 ㄱ–ㅎ) → 드러냄+온표+초성. 2017: ㉠ → 7=@7 (구 BRF는 7=a7).
 _CIRCLED_HANGUL_JAMO: dict[str, str] = {
     "㉠": "ㄱ",
     "㉡": "ㄴ",
@@ -353,6 +354,16 @@ def _is_hangul(ch: str) -> bool:
     return decompose_hangul(ch) is not None
 
 
+def _adjacent_to_digit(text: str, i: int) -> bool:
+    """수식 `<` `>` `-` 판별: 앞·뒤가 숫자이면 수표 기호로 점역."""
+    if i > 0 and text[i - 1].isdigit():
+        return True
+    j = i + 1
+    while j < len(text) and text[j] in " \t":
+        j += 1
+    return j < len(text) and text[j].isdigit()
+
+
 def _trailing_hangul_syllables(text: str, end: int) -> int:
     """``text[:end]`` 끝에서 이어지는 한글 음절 수 (어절)."""
     n = 0
@@ -370,7 +381,7 @@ def hangul_text_to_ascii(text: str) -> str:
     한자는 공식 실무대로 음독 한글로 바꾸고, 한글·한자 병기는 한자를 생략한다
     (한자 전환 표는 쓰지 않음).
     ``<u>…</u>`` 밑줄 구간은 강조부호 ``,-`` … ``-'`` 로 감싼다.
-    ㉠–㉭ 은 드러냄+자모(``7=a7`` …), ㉮–㉻ 은 드러냄+음절(``7$7`` …)로 점역한다.
+    ㉠–㉭ 은 드러냄+온표+초성(``7=@7`` …), ㉮–㉻ 은 드러냄+음절(``7$7`` …)로 점역한다.
     ⓐ–ⓩ 는 드러냄+라틴(``7a7`` …)으로 점역한다 (참고 BRF ``70a7``/‘a’ 아님).
     박스 표선 행(``────`` 등)은 ``!333…4`` 표선으로 점역한다.
     그림 자리표시 ``[그림]`` 은 고정 점역(그림 생략)으로 바꾼다.
@@ -581,7 +592,11 @@ def _hangul_body_to_ascii_masked(text: str) -> tuple[str, list[bool]]:
             if i < n and text[i] not in " \t":
                 nxt = text[i]
                 after_open_bracket = digit_start > 0 and text[digit_start - 1] in "[【"
-                attach_punct = nxt in _PUNCT_TO_ASCII
+                attach_punct = (
+                    nxt in _PUNCT_TO_ASCII
+                    or nxt in MATH_OP_TO_ASCII
+                    or (nxt in "<>-" and _adjacent_to_digit(text, i))
+                )
                 if not (
                     attach_punct
                     or (after_open_bracket and _is_hangul(nxt))
@@ -646,7 +661,24 @@ def _hangul_body_to_ascii_masked(text: str) -> tuple[str, list[bool]]:
             i += 1
             continue
 
+        if ch in MATH_OP_TO_ASCII and ch not in "<>":
+            # + − × ÷ = ₩ $ — 수표(#) 접두. <> 는 숫자 인접 시에만.
+            emit(MATH_OP_TO_ASCII[ch])
+            i += 1
+            continue
+
         if ch in _PUNCT_TO_ASCII:
+            if ch in "<>":
+                if _adjacent_to_digit(text, i):
+                    emit(MATH_OP_TO_ASCII[ch])
+                else:
+                    emit(_PUNCT_TO_ASCII[ch])
+                i += 1
+                continue
+            if ch == "-" and _adjacent_to_digit(text, i):
+                emit(MATH_OP_TO_ASCII["−"])
+                i += 1
+                continue
             if ch in {"·", "ㆍ"}:
                 while out and out[-1] == " ":
                     out.pop()

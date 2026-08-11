@@ -244,13 +244,13 @@ def test_circled_latin_a_to_e():
 
 
 def test_circled_hangul_and_underline_emphasis():
-    """참고 BRF: ㉠<u>차자 표기</u> → 7=a7,-;<. d+`o-'"""
-    assert hangul_text_to_ascii("㉠") == "7=a7"
-    assert hangul_text_to_ascii("㉡") == "7=37"
-    assert hangul_text_to_ascii("㉢") == "7=97"
+    """㉠–㉢ = 드러냄+온표+초성 (2017). 구 참고 BRF는 7=a7 종성형."""
+    assert hangul_text_to_ascii("㉠") == "7=@7"
+    assert hangul_text_to_ascii("㉡") == "7=c7"
+    assert hangul_text_to_ascii("㉢") == "7=i7"
     body = hangul_text_to_ascii("차자 표기")
     assert hangul_text_to_ascii("<u>차자 표기</u>") == ",-" + body + "-'"
-    assert hangul_text_to_ascii("㉠<u>차자 표기</u>") == "7=a7,-;<. d+`o-'"
+    assert hangul_text_to_ascii("㉠<u>차자 표기</u>") == "7=@7,-;<. d+`o-'"
 
 
 def test_circled_hangul_syllables_ga_to_ha():

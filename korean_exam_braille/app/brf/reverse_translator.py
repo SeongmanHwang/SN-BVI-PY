@@ -31,11 +31,13 @@ from korean_exam_braille.app.common.korean_tables import (
     ABBREV_GEOT,
     ABBREV_VC,
     CHOSEONG,
+    CHOSEONG_IEUNG,
     JONGSEONG,
     JONGSEONG_DIGRAPHS,
     JUNGSEONG,
     JUNGSEONG_DIGRAPHS,
     LETTER_SIGN,
+    MATH_OP_BODIES,
     HIDE_MARK_CLOSE,
     HIDE_MARK_OPEN,
     HIDE_MARK_UNIT,
@@ -72,6 +74,15 @@ _CLOSING_MULTI_PREFIXES = frozenset(
 ) | frozenset({"0'", "02", "01", "00", ",0", "07", ";0"})
 
 _LATIN_LETTERS = frozenset("abcdefghijklmnopqrstuvwxyz")
+
+# 직전 묵자가 로마/원문자/숫자 계열이면 뒤의 ,- 를 제39항 한글표로 본다.
+_HANGUL_INDICATOR_PREV = frozenset(
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+    "ⓐⓑⓒⓓⓔⓕⓖⓗⓘⓙⓚⓛⓜⓝⓞⓟⓠⓡⓢⓣⓤⓥⓦⓧⓨⓩ"
+    "①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮"
+    "㉠㉡㉢㉣㉤㉥㉦㉧㉨㉩㉪㉫㉬㉭"
+    "㉮㉯㉰㉱㉲㉳㉴㉵㉶㉷㉸㉹㉺㉻"
+)
 
 # 원문자 가–하 (㉮–㉻). 본문이 라틴 1글자(c/i/e…)와 겹치면 라틴 원문자(ⓒ…) 우선.
 _CIRCLED_HANGUL_SYL_ASCII: list[tuple[str, str]] = sorted(
@@ -275,11 +286,25 @@ def _match_punct(chars: list[str], i: int) -> tuple[str, int] | None:
     return None
 
 
+def _try_math_op(chars: list[str], i: int, out: list[str]) -> int | None:
+    """수표(#) + 수식 본문 → + − × ÷ = <> ₩ $."""
+    if _norm_cell(chars[i]) != NUMBER_SIGN:
+        return None
+    for body, ink in MATH_OP_BODIES:
+        end = i + 1 + len(body)
+        if end > len(chars):
+            continue
+        if all(_norm_cell(chars[i + 1 + k]) == body[k] for k in range(len(body))):
+            out.append(ink)
+            return end
+    return None
+
+
 def _try_circled_digit(chars: list[str], i: int, out: list[str]) -> int | None:
     """원문자 선택지 번호·원문자 라틴·원문자 한글 음절.
 
     - 관례 A: 7#a7 … 7#e7 → ①…⑤ (정방향 인코딩)
-    - 관례 B: #1 … #5 (⠼⠂…⠼⠢) → ①…⑤ (참고 시험지 BRF)
+    - 관례 B: #1 … #4 (⠼⠂…⠼⠲) → ①…④ (`#5`는 수식 +; ⑤는 7#e7)
     - 관례 C: 7$7 … (가–하, 라틴 1글자와 안 겹치는 본문) → ㉮…㉻
     - 관례 D: 7a7 … 7z7 → ⓐ…ⓩ (수표 없는 드러냄+글자)
     """
@@ -319,11 +344,12 @@ def _try_circled_digit(chars: list[str], i: int, out: list[str]) -> int | None:
             )
             return i + 3
 
-    # B) #1 … #5 (수표 뒤 하부 점형 — 일반 숫자 a–j 와 구분)
+    # B) #1 … #4 (수표 뒤 하부 점형 → ①…④).
+    # #5 는 수식 덧셈(+); ⑤는 7#e7 관례를 쓴다.
     if _norm_cell(chars[i]) == NUMBER_SIGN and i + 1 < len(chars):
         dig = _norm_cell(chars[i + 1])
-        if dig in "12345":
-            out.append("①②③④⑤"["12345".index(dig)])
+        if dig in "1234":
+            out.append("①②③④"["1234".index(dig)])
             return i + 2
     return None
 
@@ -459,6 +485,52 @@ def _take_vowel(chars: list[str], i: int) -> tuple[str, int] | None:
     if n in JUNGSEONG:
         return JUNGSEONG[n], i + 1
     return None
+
+
+def _prev_suggests_hangul_indicator(out: list[str]) -> bool:
+    """바로 앞 묵자가 로마자·원문자·숫자 등이면 한글표 문맥."""
+    for ink in reversed(out):
+        if not ink or ink.isspace():
+            continue
+        return ink[-1] in _HANGUL_INDICATOR_PREV
+    return False
+
+
+def _hangul_can_start_at(chars: list[str], i: int) -> bool:
+    """한글표 뒤에 올 수 있는 한글 시작 여부 (모음·초성·약자·온표 등)."""
+    if i >= len(chars):
+        return False
+    n = _norm_cell(chars[i])
+    if n in JUNGSEONG or n in JUNGSEONG_DIGRAPHS:
+        return True
+    if i + 1 < len(chars):
+        dig = n + _norm_cell(chars[i + 1])
+        if dig in JUNGSEONG_DIGRAPHS:
+            return True
+    if n in CHOSEONG or n in ABBREV_CV or n in ABBREV_VC:
+        return True
+    if n == TENSED_PREFIX or n == ON_SIGN or n == CHOSEONG_IEUNG:
+        return True
+    return False
+
+
+def _try_hangul_indicator(chars: list[str], i: int, out: list[str]) -> int | None:
+    """2024 제39항 한글표 ``,-`` (⠠⠤). 로마자 등 뒤에 한글이 이어질 때 경계.
+
+    강조 밑줄 시작(``,-`` … ``-'``)과 동일 셀열이라, 닫는 ``-'`` 짝이 없고
+    직전 묵자가 로마/원문자 계열이며 뒤에 한글이 시작되면 표지만 소비한다.
+    """
+    if _slice_norm(chars, i, 2) != ",-":
+        return None
+    after = i + 2
+    rest = normalize_brf_ascii("".join(chars[after:]))
+    if "-'" in rest:
+        return None
+    if not _prev_suggests_hangul_indicator(out):
+        return None
+    if not _hangul_can_start_at(chars, after):
+        return None
+    return after
 
 
 def _take_final(
@@ -998,6 +1070,12 @@ def reverse_translate_line(raw_ascii: str) -> str:
             i = jumped
             continue
 
+        # 1b0) 수표+수식 (#5→+, #33→= …) — 원문자 #1…#5 보다 먼저
+        jumped = _try_math_op(chars, i, out)
+        if jumped is not None:
+            i = jumped
+            continue
+
         # 1b) 원문자 선택지 번호
         jumped = _try_circled_digit(chars, i, out)
         if jumped is not None:
@@ -1048,6 +1126,12 @@ def reverse_translate_line(raw_ascii: str) -> str:
                 out.append("[")
                 i += 2
                 continue
+
+        # 2a) 제39항 한글표 ,- (강조 ,-…-' 보다 앞 — 짝 없을 때만)
+        jumped = _try_hangul_indicator(chars, i, out)
+        if jumped is not None:
+            i = jumped
+            continue
 
         # 2b) 복합 문장부호 최장 일치
         punct = _match_punct(chars, i)
