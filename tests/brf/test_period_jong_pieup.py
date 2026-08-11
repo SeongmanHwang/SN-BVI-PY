@@ -42,6 +42,30 @@ def test_reverse_short_spaced_4_is_period():
     assert r(h("가.")) == "가."
 
 
+def test_ellipsis_always_has_leading_space():
+    """마침표형 말줄임표는 종성 ㅍ·444 충돌 회피로 앞에 공백."""
+    assert h("…") == "444"  # 줄 시작은 공백 없음
+    assert h("...") == "444"
+    assert h("꽃이…").endswith(" 444")
+    assert h("꽃이...").endswith(" 444")
+    assert r(h("꽃이…")) == "꽃이…"
+    assert r(h("꽃잎")) == "꽃잎"
+    # 구 BRF(공백 없음)도 줄임표로 읽음
+    assert r(",@u2o444") == "꽃이…"
+
+
+def test_middot_ellipsis_is_dot6_triple():
+    """가운뎃점형 줄임표 ··· / ⋯ → 6점×3 (,,,)."""
+    assert h("···") == ",,,"
+    assert h("⋯") == ",,,"
+    assert r(",,,") == "⋯"
+    assert r(h("꽃이···")) == "꽃이⋯"
+    assert r(h("꽃이⋯")) == "꽃이⋯"
+    # 4개 이상은 빈칸용 가운뎃점 (줄임표 아님)
+    assert h("····").count('"2') == 4
+    assert ",,," not in h("····")
+
+
 def test_reverse_long_bare_4_is_period():
     """긴 어절 + 공백 없는 4 → 마침표."""
     assert r(h("합니다.")) == "합니다."

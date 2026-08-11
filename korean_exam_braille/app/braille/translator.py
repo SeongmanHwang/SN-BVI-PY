@@ -84,8 +84,11 @@ _DIGIT_TO_ASCII: dict[str, str] = {v: k for k, v in NUMBER_MAP.items()}
 
 # 종성 ㅍ/ㅌ 과 마침표/물음표는 같은 점자 셀(ASCII ``4`` / ``8``).
 # 점역: 두 음절 이하 한글 어절 뒤 ``.``·``?`` 앞에 공백을 넣어 종성과 구분.
+#       마침표형 줄임표 ``…``/``...``(444)는 앞에 공백 (ㅍ·444 충돌 회피).
+#       가운뎃점형 ``⋯``/``···``는 6점×3(``,,,``).
 # 역점역: 공백 없이 짧은 어절(≤2) 뒤 ``4`` → 종성 ㅍ,
 #         긴 어절(≥3) 또는 공백 뒤 ``4`` → 마침표.
+#         줄임표(444/,,,) 앞 공백은 묵자에서 제거.
 #         ``8``은 어절 길이 + 흔한 ㅌ받침 화이트리스트(보조)로 구분.
 _PERIOD_JONG_DISAMBIG_MAX_SYL = 2
 _JONG_PUNCT_DISAMBIG_MAX_SYL = _PERIOD_JONG_DISAMBIG_MAX_SYL
@@ -129,7 +132,8 @@ _PUNCT_TO_ASCII: dict[str, str] = {
     "〉": "07",
     "<": "78",
     ">": "07",
-    "…": "444",
+    "…": "444",  # 마침표형 줄임표 (2-5-6)×3
+    "⋯": ",,,",  # 가운뎃점형 줄임표 (6)×3 — ··· 런과 동일
     "·": '"2',  # 가운뎃점 ⠐⠆ (5 + 2-3). 旧 1;(⠂⠰)는 종성 ㄹ+초성 ㅊ과 충돌
     "ㆍ": '"2',  # 한글 방점/표 빈칸 관례 → 가운뎃점과 동일
     "∙": '"4',  # 항목 불릿 ⠐⠲ — 점역 시 뒤에 공백 필수
@@ -252,6 +256,8 @@ _U_TAG = re.compile(r"<u>(.*?)</u>", re.DOTALL)
 # 보기·표 박스 직렬화 표선 (묵자 ──── → 점자 표선; 역점역은 ─×16)
 _RULE_LINE = re.compile(r"^[\s]*[─━\-_=]{5,}[\s]*$")
 _TABLE_RULE_ASCII = "!" + ("3" * 20) + "4"
+# 빈칸·생략 표시용 가운뎃점 과다 연쇄 → 정확히 4개
+_LONG_MIDDOT_RUN = re.compile(r"·{4,}")
 
 _WORD_ABBREV_REV: list[tuple[str, str]] = sorted(
     ((hangul, cells) for cells, hangul in WORD_ABBREV.items()),
@@ -374,6 +380,11 @@ def _trailing_hangul_syllables(text: str, end: int) -> int:
     return n
 
 
+def _collapse_long_middot_runs(text: str) -> str:
+    """연속 ``·`` 4개 이상을 ``····`` 로 줄인다."""
+    return _LONG_MIDDOT_RUN.sub("····", text)
+
+
 def hangul_text_to_ascii(text: str) -> str:
     """묵자 문자열 → Braille ASCII (개행 보존).
 
@@ -399,6 +410,7 @@ def hangul_text_to_ascii_with_roman_mask(text: str) -> tuple[str, list[bool]]:
     """
     text = replace_opaque_with_slash(text)
     text = replace_hanja_with_reading(text)
+    text = _collapse_long_middot_runs(text)
     ascii_parts: list[str] = []
     mask_parts: list[list[bool]] = []
     lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
@@ -679,7 +691,51 @@ def _hangul_body_to_ascii_masked(text: str) -> tuple[str, list[bool]]:
                 emit(MATH_OP_TO_ASCII["−"])
                 i += 1
                 continue
-            if ch in {"·", "ㆍ"}:
+            if ch == "⋯":
+                emit(",,,")
+                i += 1
+                continue
+            if ch == "·":
+                run = 0
+                while i + run < n and text[i + run] == "·":
+                    run += 1
+                if run == 3:
+                    # 가운뎃점형 줄임표 (정확히 3개) → 6점×3
+                    emit(",,,")
+                    i += 3
+                    continue
+                # 1·2·4개: 각 · 를 가운뎃점으로 (4개+=빈칸 축약 후)
+                for _ in range(run):
+                    while out and out[-1] == " ":
+                        out.pop()
+                        mask.pop()
+                    if out:
+                        emit(" ")
+                    emit('"2')
+                i += run
+                while i < n and text[i] in " \t":
+                    i += 1
+                if i < n:
+                    emit(" ")
+                continue
+            if ch == "…" or (
+                ch == "."
+                and i + 2 < n
+                and text[i + 1] == "."
+                and text[i + 2] == "."
+            ):
+                # 마침표형 줄임표: … 또는 ...(+연속 .) → 2-5-6×3, 앞에 공백
+                if out and out[-1] != " ":
+                    emit(" ")
+                emit("444")
+                if ch == "…":
+                    i += 1
+                else:
+                    i += 3
+                    while i < n and text[i] == ".":
+                        i += 1
+                continue
+            if ch == "ㆍ":
                 while out and out[-1] == " ":
                     out.pop()
                     mask.pop()

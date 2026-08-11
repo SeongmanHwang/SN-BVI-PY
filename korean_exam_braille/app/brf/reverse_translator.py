@@ -1137,6 +1137,9 @@ def reverse_translate_line(raw_ascii: str) -> str:
         punct = _match_punct(chars, i)
         if punct:
             ink, ncons = punct
+            # 점역이 넣은 줄임표 앞 공백(종성 ㅍ 구분용) 제거
+            if ink in {"…", "⋯"} and out and out[-1] == " ":
+                out.pop()
             if ink:
                 out.append(ink)
             if ink in {"‘", "“", "『", "「"}:

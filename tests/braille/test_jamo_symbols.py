@@ -64,7 +64,7 @@ def test_jamo_in_quotes_like_letter_names():
 
 
 def test_common_punct_roundtrip():
-    for s in ["·", "…", "—", "『』", "「」", "<>", "《》", "{}", "※", "“”"]:
+    for s in ["·", "…", "⋯", "—", "『』", "「」", "<>", "《》", "{}", "※", "“”"]:
         a = hangul_text_to_ascii(s)
         assert a, s
         assert r(a) == s, (s, a, r(a))

@@ -55,6 +55,15 @@ def test_middot_has_single_space_on_both_sides():
     assert reverse_translate_line(expected) == "국어 · 영어"
 
 
+def test_long_middot_run_collapses_to_four():
+    """연속 · 4개 이상은 묵자에서 ···· 로 줄인 뒤 점역."""
+    four = hangul_text_to_ascii("····")
+    assert hangul_text_to_ascii("·······") == four
+    assert hangul_text_to_ascii("·" * 16) == four
+    assert hangul_text_to_ascii("···") != four  # 3개는 유지
+    assert four.count('"2') == 4
+
+
 def test_hangul_araea_and_legacy_placeholder_are_middot():
     """표 빈칸 ㆍ 와 옛 자리표시 =?(⠿⠹)는 가운뎃점으로 본다."""
     assert hangul_text_to_ascii("ㆍ") == '"2'
