@@ -35,6 +35,7 @@ from korean_exam_braille.app.pdf.tables import (
     detect_vector_tables,
 )
 from korean_exam_braille.app.pdf.plot_summary import annotate_plot_summary_lines
+from korean_exam_braille.app.pdf.parallel_choice import promote_parallel_choices_in_lines
 from korean_exam_braille.app.pdf.reading_order import assign_reading_order
 from korean_exam_braille.app.pdf.side_markers import attach_trailing_side_markers
 from korean_exam_braille.app.common.text_normalize import (
@@ -128,6 +129,10 @@ def build_page_structure(
         page_number,
         page_width=float(rect.width),
         profile=profile,
+    )
+    # 병렬 선택지(①×㉠/㉡): 반복 x정렬+마커+헤더 고신뢰 시에만 줄 재조합
+    lines = promote_parallel_choices_in_lines(
+        spans, lines, page_number=page_number
     )
     # [중략 … 줄거리] 표지 + 돋움·작은 글씨 런 끝에 [줄거리 끝]
     lines = annotate_plot_summary_lines(lines, spans, page_number=page_number)

@@ -227,6 +227,7 @@
 7. remove_detected_label_text      # 여백에 찍힌 [A] 표지만 삭제
 8. (빈 span 제거)
 9. build_lines                     # 단·줄 + <u> 삽입
+9a. promote_parallel_choices_in_lines  # ①×㉠/㉡ 반복 x정렬 고신뢰 시 줄 재조합
 9b. annotate_plot_summary_lines    # [중략…줄거리] 런 끝 → [줄거리 끝]
 10. linearize_page_graphics
       · merge_circled_label_lines   # 원문자 전용 행 병합
@@ -252,6 +253,7 @@
 | **밑줄** | `emphasis.mark_underlined_spans` | 짧은 가로 `l` 획만 후보. 긴 가로선·닫힌 박스 상하변 제외. `char_bboxes`면 글자 단위 `<u>`, 없으면 span 전체. 표 안 밑줄 클리어. |
 | **지문 꺾쇠** | `bracket_groups` | 세로축+짧은 턱+라벨로 `[A]`–`[E]` 기하 검출. **오른쪽 여백**(왼쪽 턱)과 **왼쪽 여백**(오른쪽 턱) 모두. 여백 인쇄 표지만 텍스트에서 제거(본문 `[A]의…`는 유지). 라인/블록에 `bracket_label`·태그. **블록은 소속 라벨이 바뀔 때 분할**해 점역 `┌────`가 괄호 밖 서술을 감싸지 않게 함. |
 | **줄 구성** | `line_builder.build_lines` | 열별 y 근접·x 간격으로 줄. 밑줄 범위를 `<u>…</u>`로 직렬화. |
+| **병렬 선택지** | `parallel_choice.promote_parallel_choices_in_lines` | 여러 행의 동일 x-lane 반복 + ①~⑤ 연속 + **㉠/㉡류 열 헤더 필수**. 고신뢰도만 `① ㉠ … / ㉡ …` 로 재조합. 헤더 없는 페이지 2단(선택지\|본문)은 승격하지 않음. |
 | **중략 줄거리** | `plot_summary.annotate_plot_summary_lines` | `[중략…줄거리]`/`줄거리]` 표지 행부터 **동일 글꼴 버킷·크기** 연속 런 끝에 `[줄거리 끝]` 삽입. 시작 표지는 원문만. |
 | **원문자 행** | `graphic_linearize.merge_circled_label_lines` | **라벨만** 있는 ⓐⓑ… 행을 한 줄로 합침. 본문 인라인 `ⓐ<u>…</u>`는 옮기지 않음. |
 | **박스 표선** | `boxes` + `insert_box_rule_lines` | 닫힌 큰 프레임에 `─`×16 규칙 줄 삽입(점역 표선). 짧은 빈칸 박스(`[가]`형, 높이 작음)는 표선 생략. |
