@@ -118,8 +118,8 @@ def test_bracket_tags_become_common_exam_metadata():
     assert passages[1].metadata["bracket_end_labels"] == ["[A]"]
 
 
-def test_header_footer_soft_keep_group():
-    """Header/Footer는 root에만 두고 PassageGroup 상태는 유지한다."""
+def test_header_footer_excluded_from_content_root():
+    """Header/Footer는 본문 root에 넣지 않고 page_artifacts로만 보존한다."""
     blocks = [
         _block("h", "국어 영역", order=0, tags=["Header"]),
         _block("g", "[1~2] 다음", order=1, tags=["PassageGroup"]),
@@ -128,10 +128,14 @@ def test_header_footer_soft_keep_group():
     ]
     exam = RuleExamStructureBuilder().build(_doc(blocks))
     types = [c.node_type for c in exam.root.children]
-    # 그룹은 문서 끝 flush로 root에 올라오므로 Footer 뒤에 올 수 있다
-    assert types == ["Header", "Footer", "PassageGroup"]
-    group = next(c for c in exam.root.children if c.node_type == "PassageGroup")
+    assert types == ["PassageGroup"]
+    group = exam.root.children[0]
     assert [c.node_type for c in group.children] == ["Passage"]
+    artifacts = exam.metadata.get("page_artifacts") or []
+    assert [a["node_type"] for a in artifacts] == ["Header", "Footer"]
+    assert artifacts[0]["metadata"].get("reading_order") == 0
+    assert artifacts[1]["metadata"].get("reading_order") == 3
+    assert artifacts[0]["source_range"]["page_number"] == 1
 
 
 def test_passage_continues_across_footer_header():
@@ -155,6 +159,7 @@ def test_passage_continues_across_footer_header():
         ],
     )
     exam = RuleExamStructureBuilder().build(doc)
+    assert all(c.node_type != "Header" and c.node_type != "Footer" for c in exam.root.children)
     groups = [c for c in exam.root.children if c.node_type == "PassageGroup"]
     assert len(groups) == 1
     passages = [c for c in groups[0].children if c.node_type == "Passage"]
@@ -162,3 +167,5 @@ def test_passage_continues_across_footer_header():
     assert [p.source_range.raw_text for p in passages] == ["지문 앞부분", "지문 이어쓰기"]
     assert len(questions) == 1
     assert not exam.unclassified_ids
+    artifacts = exam.metadata.get("page_artifacts") or []
+    assert [a["node_type"] for a in artifacts] == ["Footer", "Header"]

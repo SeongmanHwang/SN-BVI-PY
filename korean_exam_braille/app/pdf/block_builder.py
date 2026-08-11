@@ -38,6 +38,12 @@ def _column_key(line: PdfLine, cut: float | None, profile: PageLayoutProfile | N
             return 2
         mid = (line.bbox[0] + line.bbox[2]) / 2
         width = line.bbox[2] - line.bbox[0]
+        if profile.uses_page_local_columns() or profile.column_detection == "single":
+            if cut is None:
+                return 0
+            if width > cut and line.bbox[0] < cut < line.bbox[2]:
+                return -1
+            return 0 if mid < cut else 1
         return profile.column_of_x(mid, span_width=width)
 
     if cut is None:
@@ -103,7 +109,14 @@ def build_blocks(
     if not lines:
         return []
 
-    cut = profile.column_cut_x if profile is not None else _estimate_cut(lines)
+    if profile is not None and profile.uses_page_local_columns():
+        cut = _estimate_cut(lines)
+    elif profile is not None and profile.column_detection == "single":
+        cut = None
+    elif profile is not None:
+        cut = profile.column_cut_x
+    else:
+        cut = _estimate_cut(lines)
     heights = [max(1.0, ln.bbox[3] - ln.bbox[1]) for ln in lines]
     median_h = sorted(heights)[len(heights) // 2]
     max_gap = median_h * gap_factor

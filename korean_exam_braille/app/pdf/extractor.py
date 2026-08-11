@@ -185,6 +185,7 @@ def extract_pdf(
             if num < 1 or num > doc.page_count:
                 continue
             pages.append(build_page_structure(doc[num - 1], num, profile=layout))
+        layout_dict = layout.to_dict()
         return PdfDocumentStructure(
             source_path=str(path),
             page_count=doc.page_count,
@@ -192,7 +193,8 @@ def extract_pdf(
             metadata={
                 "title": doc.metadata.get("title") if doc.metadata else None,
                 "extracted_pages": [p.page_number for p in pages],
-                "layout_profile": layout.to_dict(),
+                "layout_profile": layout_dict,
+                "column_detection": layout_dict.get("column_detection", "shared"),
             },
         )
     finally:

@@ -35,6 +35,13 @@ def _region_key(block: PdfBlock, profile: PageLayoutProfile | None, cut: float |
             return (3, block.bbox[1], block.bbox[0])
         mid = (block.bbox[0] + block.bbox[2]) / 2
         width = block.bbox[2] - block.bbox[0]
+        if profile.uses_page_local_columns() or profile.column_detection == "single":
+            if cut is None:
+                return (2, block.bbox[1], block.bbox[0])
+            if width > cut and block.bbox[0] < cut < block.bbox[2]:
+                return (1, block.bbox[1], block.bbox[0])
+            col = 0 if mid < cut else 1
+            return (1 + col, block.bbox[1], block.bbox[0])
         col = profile.column_of_x(mid, span_width=width)
         # 전폭(-1)은 헤더 다음·좌열 앞
         col_order = {-1: 1, 0: 2, 1: 3}.get(col, 2)
@@ -56,7 +63,14 @@ def assign_reading_order(
     profile: PageLayoutProfile | None = None,
 ) -> list[PdfBlock]:
     """헤더 → (전폭) → 좌단 → 우단 → 푸터."""
-    cut = profile.column_cut_x if profile is not None else _estimate_cut(blocks)
+    if profile is not None and profile.uses_page_local_columns():
+        cut = _estimate_cut(blocks)
+    elif profile is not None and profile.column_detection == "single":
+        cut = None
+    elif profile is not None:
+        cut = profile.column_cut_x
+    else:
+        cut = _estimate_cut(blocks)
     ordered = sorted(blocks, key=lambda b: _region_key(b, profile, cut) + (b.id,))
     for i, block in enumerate(ordered):
         block.reading_order = i

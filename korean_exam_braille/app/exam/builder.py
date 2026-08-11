@@ -94,6 +94,7 @@ class RuleExamStructureBuilder:
         root_children: list[ExamNode] = []
         relations: list[ExamRelation] = []
         unclassified: list[str] = []
+        page_artifacts: list[ExamNode] = []
         group: _GroupState | None = None
         orphan_question: ExamNode | None = None
 
@@ -177,9 +178,17 @@ class RuleExamStructureBuilder:
             tag = _primary_tag(block)
 
             if tag in {"Header", "Footer"}:
-                # soft keep: 쪽 장식은 root에만 두고 PassageGroup·문항 컨텍스트는 유지
-                # (페이지를 넘는 지문/보기/선택지 이어쓰기). 새 [N~M]·문서 끝이 닫는 지점.
-                root_children.append(_node_from_block(block, tag, confidence=0.9))
+                # 페이지 장식은 본문 그룹화·점역 walk에서 제외한다.
+                # flush하지 않음 — 페이지 경계 ≠ 지문 경계.
+                # root에 끼워 넣지 않음 — PassageGroup보다 앞서 직렬화되는 것을 막음.
+                page_artifacts.append(
+                    _node_from_block(
+                        block,
+                        tag,
+                        confidence=0.9,
+                        reading_order=block.reading_order,
+                    )
+                )
                 continue
 
             if tag == "EndNotice":
@@ -262,7 +271,11 @@ class RuleExamStructureBuilder:
             root=root,
             relations=relations,
             unclassified_ids=unclassified,
-            metadata={"builder": "RuleExamStructureBuilder"},
+            metadata={
+                "builder": "RuleExamStructureBuilder",
+                # Header/Footer 등 — 디버그·후속 점자 면 머리말용. 본문 트리가 아님.
+                "page_artifacts": [n.to_dict() for n in page_artifacts],
+            },
         )
         apply_genre_paragraph_splits(exam, pdf)
         return exam

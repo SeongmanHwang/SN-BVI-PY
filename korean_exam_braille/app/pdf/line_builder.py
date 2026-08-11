@@ -40,6 +40,20 @@ def detect_column_boundary(spans: list[PdfSpan], page_width: float | None = None
     return None
 
 
+def _column_from_cut(
+    span: PdfSpan,
+    cut: float,
+    *,
+    page_width: float,
+) -> int:
+    """cut 기준: -1=전폭, 0=좌, 1=우."""
+    mid = (span.bbox[0] + span.bbox[2]) / 2
+    span_w = span.bbox[2] - span.bbox[0]
+    if span_w > page_width * 0.50 and span.bbox[0] < cut < span.bbox[2]:
+        return -1
+    return 0 if mid < cut else 1
+
+
 def _assign_columns(
     spans: list[PdfSpan],
     cut: float | None,
@@ -49,9 +63,15 @@ def _assign_columns(
     if cut is None and profile is None:
         return [(0, s) for s in spans]
 
+    page_w = (
+        profile.page_width
+        if profile is not None
+        else max((sp.bbox[2] for sp in spans), default=1.0)
+    )
+    page_local = profile is not None and profile.uses_page_local_columns()
+
     out: list[tuple[int, PdfSpan]] = []
     for s in spans:
-        y_mid = (s.bbox[1] + s.bbox[3]) / 2
         mid = (s.bbox[0] + s.bbox[2]) / 2
         span_w = s.bbox[2] - s.bbox[0]
 
@@ -63,18 +83,21 @@ def _assign_columns(
             if band == "footer":
                 out.append((2, s))
                 continue
+            if page_local:
+                if cut is None:
+                    out.append((0, s))
+                else:
+                    out.append((_column_from_cut(s, cut, page_width=page_w), s))
+                continue
+            if profile.column_detection == "single" or cut is None:
+                out.append((0, s))
+                continue
             col = profile.column_of_x(mid, span_width=span_w)
             out.append((col, s))
             continue
 
-        page_w = max(sp.bbox[2] for sp in spans)
         assert cut is not None
-        if span_w > page_w * 0.50 and s.bbox[0] < cut < s.bbox[2]:
-            out.append((-1, s))
-        elif mid < cut:
-            out.append((0, s))
-        else:
-            out.append((1, s))
+        out.append((_column_from_cut(s, cut, page_width=page_w), s))
     return out
 
 
@@ -177,7 +200,15 @@ def build_lines(
         if profile is not None
         else (page_width or max(s.bbox[2] for s in spans))
     )
-    cut = profile.column_cut_x if profile is not None else detect_column_boundary(spans, width)
+    if profile is not None and profile.uses_page_local_columns():
+        # 문서 공통 거터 실패 → 이 면만 다시 탐지 (실패 시 cut=None → 1단)
+        cut = detect_column_boundary(spans, width)
+    elif profile is not None and profile.column_detection == "single":
+        cut = None
+    elif profile is not None:
+        cut = profile.column_cut_x
+    else:
+        cut = detect_column_boundary(spans, width)
     assigned = _assign_columns(spans, cut, profile)
 
     by_col: dict[int, list[PdfSpan]] = {}
