@@ -1358,6 +1358,12 @@ def reverse_translate_line(raw_ascii: str) -> str:
             i = jumped
             continue
 
+        # 12b) 「예」 앞 붙임줄(⠤): 받침 없는 음절 뒤 `/`(ㅖ)이 종성 ㅆ으로
+        # 붙지 않도록 점역에서 끼운 `-`. 묵자 하이픈으로 남기지 않는다.
+        if n == "-" and _peek(chars, i + 1) == "/":
+            i += 1
+            continue
+
         # 13) 1칸 구두점
         if n in PUNCT_SINGLE:
             # 8: 문장 끝·닫는부호 앞이면 물음표 (점역 공백 구분용 스페이스 제거)

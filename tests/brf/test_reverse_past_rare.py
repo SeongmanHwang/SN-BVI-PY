@@ -72,3 +72,20 @@ def test_ss_final_not_ye_after_vowel():
     # 모음 뒤 / 는 종성 ㅆ (예로 재분석 금지)
     assert "예습" not in r("j:/,[bcoi")
     assert "여예" not in r(":/,[bcoi")
+
+
+def test_ye_coupling_after_open_syllable():
+    """받침 없는 음절 + 예 → 붙임줄. 유예≠윴, 개예≠갰."""
+    assert hangul_text_to_ascii("유예") == "%-/"
+    assert hangul_text_to_ascii("개예") == "`r-/"
+    assert hangul_text_to_ascii("예") == "/"
+    assert hangul_text_to_ascii("예정") == "/.s7"
+    assert hangul_text_to_ascii("온예") == "(/"
+    assert r("%-/") == "유예"
+    assert r("`r-/") == "개예"
+    assert r(hangul_text_to_ascii("유예")) == "유예"
+    assert r(hangul_text_to_ascii("유예기간")) == "유예기간"
+    assert r(hangul_text_to_ascii("예정")) == "예정"
+    assert r(hangul_text_to_ascii("온예")) == "온예"
+    # 레거시(붙임줄 없음)는 종성 ㅆ으로 남음
+    assert r("%/") == "윴"

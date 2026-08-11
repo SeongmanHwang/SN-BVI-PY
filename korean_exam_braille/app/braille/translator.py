@@ -100,6 +100,8 @@ _JONG_PUNCT_DISAMBIG_MAX_SYL = _PERIOD_JONG_DISAMBIG_MAX_SYL
 # 하+였(j:/) 등과 헷갈리지 않도록 초성·모음 사이에 붙임줄(dots 36, ASCII '-')을 둔다.
 _YEOSS_COUPLING_CHO = frozenset({"ㅎ", "ㅅ", "ㄷ", "ㅈ", "ㅋ", "ㅍ"})
 _COUPLING_MARK = "-"  # 붙임줄 ⠤ (3-6)
+# 「예」(ㅇ+ㅖ, 무받침): 앞 음절이 받침이 없으면 `/`(종성 ㅆ과 동형)이
+# 받침으로 붙어 「윴/갰…」이 되므로 붙임줄을 끼운다. 어절 선두·받침 뒤는 `/`만.
 
 _PUNCT_TO_ASCII: dict[str, str] = {
     ".": "4",
@@ -514,6 +516,8 @@ def _hangul_body_to_ascii(text: str) -> str:
 def _hangul_body_to_ascii_masked(text: str) -> tuple[str, list[bool]]:
     out: list[str] = []
     mask: list[bool] = []
+    # 직전 한글 음절이 받침 없음 → 이어지는 「예」에 붙임줄 필요
+    prev_open_syl = False
 
     def emit(piece: str, *, roman: bool = False) -> None:
         if not piece:
@@ -528,6 +532,7 @@ def _hangul_body_to_ascii_masked(text: str) -> tuple[str, list[bool]]:
 
         if ch in " \t":
             emit(" ")
+            prev_open_syl = False
             i += 1
             continue
 
@@ -535,6 +540,8 @@ def _hangul_body_to_ascii_masked(text: str) -> tuple[str, list[bool]]:
         for hangul, cells in _WORD_ABBREV_REV:
             if text.startswith(hangul, i):
                 emit(cells)
+                last = decompose_hangul(hangul[-1]) if hangul else None
+                prev_open_syl = last is not None and not last[2]
                 i += len(hangul)
                 matched_word = True
                 break
@@ -546,6 +553,7 @@ def _hangul_body_to_ascii_masked(text: str) -> tuple[str, list[bool]]:
             while j < n and text[j] in _HIDE_CIRCLE_CHARS:
                 j += 1
             emit(_encode_hide_circles(j - i))
+            prev_open_syl = False
             i = j
             continue
 
@@ -554,31 +562,37 @@ def _hangul_body_to_ascii_masked(text: str) -> tuple[str, list[bool]]:
             while j < n and text[j] in _HIDE_SQUARE_CHARS:
                 j += 1
             emit(_encode_hide_squares(j - i))
+            prev_open_syl = False
             i = j
             continue
 
         if ch in _HIDE_TRIANGLE_CHARS:
             emit(_encode_hide_triangle())
+            prev_open_syl = False
             i += 1
             continue
 
         if ch in _HIDE_X_CHARS:
             emit(_encode_hide_x_mark())
+            prev_open_syl = False
             i += 1
             continue
 
         if ch == ARROW_RIGHT_INK:
             emit(ARROW_RIGHT_BRAILLE_ASCII)
+            prev_open_syl = False
             i += 1
             continue
 
         if ch in _CIRCLED_DIGIT_CELL:
             emit("7#" + _CIRCLED_DIGIT_CELL[ch] + "7")
+            prev_open_syl = False
             i += 1
             continue
 
         if ch in _CIRCLED_LATIN_CELL:
             emit("7" + _CIRCLED_LATIN_CELL[ch] + "7")
+            prev_open_syl = False
             i += 1
             continue
 
@@ -587,6 +601,7 @@ def _hangul_body_to_ascii_masked(text: str) -> tuple[str, list[bool]]:
             body = JAMO_COMPAT_TO_ASCII.get(jamo)
             if body:
                 emit("7" + body + "7")
+            prev_open_syl = False
             i += 1
             continue
 
@@ -595,6 +610,7 @@ def _hangul_body_to_ascii_masked(text: str) -> tuple[str, list[bool]]:
             body, _ = _hangul_body_to_ascii_masked(syl)
             if body:
                 emit("7" + body + "7")
+            prev_open_syl = False
             i += 1
             continue
 
@@ -618,6 +634,7 @@ def _hangul_body_to_ascii_masked(text: str) -> tuple[str, list[bool]]:
                     or (after_open_bracket and _is_hangul(nxt))
                 ):
                     emit(" ")
+            prev_open_syl = False
             continue
 
         if ("A" <= ch <= "Z") or ("a" <= ch <= "z"):
@@ -654,6 +671,7 @@ def _hangul_body_to_ascii_masked(text: str) -> tuple[str, list[bool]]:
                 break
             if i < n:
                 emit(ROMAN_END_SIGN)
+            prev_open_syl = False
             continue
 
         decomp = decompose_hangul(ch)
@@ -673,17 +691,29 @@ def _hangul_body_to_ascii_masked(text: str) -> tuple[str, list[bool]]:
                 else:
                     emit(_encode_syllable(cho, jung, jong))
             else:
-                emit(_encode_syllable(*decomp))
+                piece = _encode_syllable(*decomp)
+                # 유예 → 윴 방지: 받침 없는 음절 뒤 「예」 앞에 붙임줄
+                if (
+                    prev_open_syl
+                    and cho == "ㅇ"
+                    and jung == "ㅖ"
+                    and not jong
+                ):
+                    piece = _COUPLING_MARK + piece
+                emit(piece)
+            prev_open_syl = not jong
             i += 1
             continue
 
         if ch in MATH_OP_TO_ASCII and ch not in "<>":
             # + − × ÷ = ₩ $ — 수표(#) 접두. <> 는 숫자 인접 시에만.
             emit(MATH_OP_TO_ASCII[ch])
+            prev_open_syl = False
             i += 1
             continue
 
         if ch in _PUNCT_TO_ASCII:
+            prev_open_syl = False
             if ch in "<>":
                 if _adjacent_to_digit(text, i):
                     emit(MATH_OP_TO_ASCII[ch])
@@ -775,14 +805,17 @@ def _hangul_body_to_ascii_masked(text: str) -> tuple[str, list[bool]]:
 
         if ch in JAMO_COMPAT_TO_ASCII:
             emit(JAMO_COMPAT_TO_ASCII[ch])
+            prev_open_syl = False
             i += 1
             continue
 
         if 0x3131 <= ord(ch) <= 0x318E:
             emit("=?")
+            prev_open_syl = False
             i += 1
             continue
 
+        prev_open_syl = False
         i += 1
 
     return "".join(out), mask
