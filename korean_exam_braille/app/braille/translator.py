@@ -48,6 +48,9 @@ from korean_exam_braille.app.common.plot_summary_markup import (
 )
 from korean_exam_braille.app.common.hanja_reading import replace_hanja_with_reading
 from korean_exam_braille.app.common.opaque_text import replace_opaque_with_slash
+from korean_exam_braille.app.common.text_normalize import (
+    ensure_newline_before_reference_mark,
+)
 from korean_exam_braille.app.exam.passage_indent_config import (
     DEFAULT_PASSAGE_INDENT_GENRE_CONFIG,
 )
@@ -411,6 +414,7 @@ def hangul_text_to_ascii_with_roman_mask(text: str) -> tuple[str, list[bool]]:
     text = replace_opaque_with_slash(text)
     text = replace_hanja_with_reading(text)
     text = _collapse_long_middot_runs(text)
+    text = ensure_newline_before_reference_mark(text)
     ascii_parts: list[str] = []
     mask_parts: list[list[bool]] = []
     lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
@@ -834,14 +838,18 @@ class TableBrailleTranslator:
         # Passage/Choice/Question: PDF 행 개행을 문단 줄바꿈으로 쓰지 않음 —
         # 공백으로 이어 붙여 32셀이 찰 때까지 레이아웃이 soft wrap 하게 한다.
         # 예외: 시(indent_genre)는 시행 개행을 유지한다.
+        # 예외: ※ 앞 줄바꿈은 참고 표지로 유지한다.
         genre = node.metadata.get("indent_genre")
         keep_hard_newlines = (
             node.node_type == "Passage"
             and genre == DEFAULT_PASSAGE_INDENT_GENRE_CONFIG.label_si
         )
+        text = ensure_newline_before_reference_mark(text)
         if node.node_type in {"Passage", "Choice", "Question"} and not keep_hard_newlines:
+            text = text.replace("\n※", "\0※")
             text = re.sub(r"[\r\n]+", " ", text)
             text = re.sub(r" {2,}", " ", text)
+            text = text.replace("\0※", "\n※")
         starts = bracket_labels(node.metadata, starts_only=True)
         ends = bracket_labels(node.metadata, ends_only=True)
         seq = self.translate_text(text)

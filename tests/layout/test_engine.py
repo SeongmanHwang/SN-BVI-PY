@@ -296,3 +296,37 @@ def test_poetry_passage_keeps_hard_newlines():
     assert all(row.startswith("  ") for row in body)
     assert [row.strip() for row in body] == ["aaaa", "bbbb", "cccc"]
 
+
+def test_passage_keeps_newline_before_reference_mark():
+    """산문 Passage도 ※(99) 앞 줄바꿈은 soft-wrap 병합에서 제외한다."""
+    from korean_exam_braille.app.braille.translator import TableBrailleTranslator
+    from korean_exam_braille.app.brf.reverse_translator import reverse_translate_line
+    from korean_exam_braille.app.exam.models import ExamNode, SourceRange
+    from korean_exam_braille.app.layout.engine import _flatten_passage_newlines
+
+    flat, _ = _flatten_passage_newlines("aaaa\nbbbb\n99 cccc", None)
+    assert flat == "aaaa bbbb\n99 cccc"
+
+    ink = "이현, 백상루별곡 - ※ 수군"
+    node = ExamNode(
+        id="p-ref",
+        node_type="Passage",
+        source_range=SourceRange(page_number=1, raw_text=ink),
+    )
+    seq = TableBrailleTranslator().translate_node(node)
+    ascii_text = seq.metadata.get("ascii") or ""
+    assert "\n99" in ascii_text
+
+    eng = RuleBrailleLayoutEngine()
+    profile = LayoutProfile(cells_per_line=32, paragraph_indent=2, lines_per_page=26)
+    doc = eng.layout([seq], profile=profile)
+    body = [ln.ascii_text for ln in doc.pages[0].lines if (ln.ascii_text or "").strip()]
+    assert len(body) >= 2
+    joined = "\n".join(ln.strip() for ln in body)
+    assert "\n99" in joined or any(
+        reverse_translate_line(ln).lstrip().startswith("※") for ln in body
+    )
+    rev = "\n".join(reverse_translate_line(ln) for ln in body)
+    assert "※" in rev
+    assert "수군" in rev
+

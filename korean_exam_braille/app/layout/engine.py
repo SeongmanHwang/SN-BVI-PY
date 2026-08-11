@@ -61,27 +61,48 @@ def _move_cut_before_nonbreaking(text: str, start: int, cut: int) -> int:
     return cut
 
 
+# ※ 점형 (korean_tables punct). Passage 개행 병합 시에도 이 앞 줄바꿈은 유지.
+_REFERENCE_MARK_ASCII = "99"
+
+
 def _flatten_passage_newlines(
     text: str,
     roman_mask: list[bool] | None,
 ) -> tuple[str, list[bool] | None]:
-    """Passage/Choice/Question soft wrap 전: 하드 개행을 공백으로 바꿔 한 흐름으로 만든다."""
+    """Passage/Choice/Question soft wrap 전: 하드 개행을 공백으로 바꿔 한 흐름으로 만든다.
+
+    예외: ``\\n99``(※) 앞 줄바꿈은 참고 표지로 유지한다.
+    """
     if not text or ("\n" not in text and "\r" not in text):
         return text, roman_mask
     out_chars: list[str] = []
     out_mask: list[bool] | None = [] if roman_mask is not None else None
     i = 0
     n = len(text)
+
+    def _keep_ref_mark_break(next_i: int) -> bool:
+        return text[next_i : next_i + len(_REFERENCE_MARK_ASCII)] == _REFERENCE_MARK_ASCII
+
     while i < n:
         ch = text[i]
         if ch == "\r" and i + 1 < n and text[i + 1] == "\n":
-            out_chars.append(" ")
-            if out_mask is not None and roman_mask is not None:
-                out_mask.append(False)
+            if _keep_ref_mark_break(i + 2):
+                out_chars.append("\n")
+                if out_mask is not None and roman_mask is not None:
+                    out_mask.append(False)
+            else:
+                out_chars.append(" ")
+                if out_mask is not None and roman_mask is not None:
+                    out_mask.append(False)
             i += 2
             continue
         if ch in "\r\n":
-            out_chars.append(" ")
+            if ch == "\n" and _keep_ref_mark_break(i + 1):
+                out_chars.append("\n")
+            elif ch == "\r" and _keep_ref_mark_break(i + 1):
+                out_chars.append("\n")
+            else:
+                out_chars.append(" ")
             if out_mask is not None and roman_mask is not None:
                 out_mask.append(False)
             i += 1
@@ -335,6 +356,7 @@ class RuleBrailleLayoutEngine:
             # Passage/Choice/Question: translator가 개행을 공백으로 합치는
             # 것이 정석이지만, 시퀀스에 남은 \n 도 soft wrap 전에 한 흐름으로.
             # 시(keep_hard_newlines)는 시행을 유지한다.
+            # ※(\n99) 앞 줄바꿈은 flatten이 남기므로 이후 hard wrap으로 유지한다.
             if (
                 node_type in {"Passage", "Choice", "Question"}
                 and not preformatted
@@ -343,6 +365,8 @@ class RuleBrailleLayoutEngine:
                 ascii_text, roman_mask = _flatten_passage_newlines(
                     ascii_text, roman_mask
                 )
+            # ※ 등으로 flatten 후에도 남은 하드 개행이 있으면 시와 같이 유지
+            keep_hard = keep_hard or ("\n" in ascii_text or "\r" in ascii_text)
             # 미리 패딩된 Header는 줄 단위로만 넣고 wrap하지 않음
             if preformatted:
                 rows = ascii_text.split("\n") if ascii_text else [""]

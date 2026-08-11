@@ -7,6 +7,9 @@ from korean_exam_braille.app.common.opaque_text import (
     is_opaque_char,
     replace_opaque_with_slash,
 )
+from korean_exam_braille.app.common.text_normalize import (
+    ensure_newline_before_reference_mark,
+)
 from korean_exam_braille.app.pdf.emphasis import annotate_text_with_underline_ranges
 from korean_exam_braille.app.pdf.models import PdfPageStructure
 
@@ -60,6 +63,7 @@ def format_page_text_for_display(page: PdfPageStructure) -> str:
                     text = f"{line.bracket_label} {text}"
                 if line.trailing_marker:
                     text = f"{text} {line.trailing_marker}"
+                text = ensure_newline_before_reference_mark(text)
                 line_texts.append(text)
         if line_texts:
             parts.append("\n".join(line_texts))

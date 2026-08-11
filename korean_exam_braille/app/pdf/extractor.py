@@ -37,6 +37,9 @@ from korean_exam_braille.app.pdf.tables import (
 from korean_exam_braille.app.pdf.plot_summary import annotate_plot_summary_lines
 from korean_exam_braille.app.pdf.reading_order import assign_reading_order
 from korean_exam_braille.app.pdf.side_markers import attach_trailing_side_markers
+from korean_exam_braille.app.common.text_normalize import (
+    ensure_newline_before_reference_mark,
+)
 
 
 def _is_bold(flags: int, font_name: str) -> bool:
@@ -132,6 +135,9 @@ def build_page_structure(
     figures = filter_graphic_figures(figures, lines)
     # 흩어진 원문자 행 병합 + 표·그림 승격 + 박스 표선
     lines = linearize_page_graphics(page, lines, tables=tables, figures=figures)
+    for ln in lines:
+        if ln.text and "※" in ln.text:
+            ln.text = ensure_newline_before_reference_mark(ln.text)
     # 오른쪽 여백 [A]~[E] 꺾인 괄호 → 행 소속
     assign_lines_to_brackets(lines, bracket_groups)
     blocks = build_blocks(lines, page_number, profile=profile)
