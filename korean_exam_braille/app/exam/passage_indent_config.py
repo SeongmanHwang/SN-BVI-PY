@@ -7,19 +7,19 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class PassageIndentGenreConfig:
-    """L/R 런길이 기반 시·대화문·소설·비문학 판정 임계값.
+    """L/R 런길이·쌍점 개수 기반 시·대화문·소설·비문학 판정 임계값.
 
-    판정 순서(스위치): 시 → 대화문 → 소설 → 비문학.
+    판정 순서(스위치): 대화문 → 시 → 소설 → 비문학.
     """
 
     # 그룹 최좌측(마진)보다 이만큼 오른쪽이면 R(들여쓰기)
     x0_epsilon: float = 8.0
 
-    # 1) 시: L합 < 이 값
-    poetry_max_l_sum: int = 10
+    # 1) 대화문: 본문 쌍점(:)·전각 쌍점(：) 합이 이 값 이상
+    dialogue_min_colons: int = 5
 
-    # 2) 대화문: R합 > L합 이고 R합 < L합 * 이 배수
-    dialogue_r_lt_l_factor: float = 1.5
+    # 2) 시: L합 < 이 값
+    poetry_max_l_sum: int = 10
 
     # 이 길이 이상인 R 런(R45 …)은 합계·장르·프로필에서 무시
     ignore_r_run_at_least: int = 45

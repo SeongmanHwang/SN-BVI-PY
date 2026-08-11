@@ -25,17 +25,26 @@ class PassageIndentAnalysis:
     sum_l: int
     non_r1_runs: int
     line_count: int
+    colon_count: int = 0
 
     def mode_b_label_suffix(self) -> str:
-        """트리 라벨용: 장르 · R합/L합 · nonR1=n · 프로필."""
+        """트리 라벨용: 장르 · R합/L합 · nonR1=n · 쌍점 · 프로필."""
         parts = [
             self.genre,
             f"R{self.sum_r}/L{self.sum_l}",
             f"nonR1={self.non_r1_runs}",
+            f"colon={self.colon_count}",
         ]
         if self.profile:
             parts.append(self.profile)
         return " · ".join(parts)
+
+
+def count_colons(text: str) -> int:
+    """반각·전각 쌍점(:)·(：) 개수."""
+    if not text:
+        return 0
+    return text.count(":") + text.count("：")
 
 
 def classify_indent_levels(
@@ -154,28 +163,36 @@ def filter_indent_runs(
 def analyze_passage_indent(
     x0s: list[float],
     *,
+    text: str | None = None,
     config: PassageIndentGenreConfig = DEFAULT_PASSAGE_INDENT_GENRE_CONFIG,
 ) -> PassageIndentAnalysis:
-    """L/R 합·R 런 패턴으로 장르·디버그 수치를 함께 반환."""
+    """쌍점 개수·L/R 런으로 장르·디버그 수치를 함께 반환."""
+    colon_n = count_colons(text or "")
     levels = classify_indent_levels(x0s, config=config)
     if not levels:
+        genre = (
+            config.label_dialogue
+            if colon_n >= config.dialogue_min_colons
+            else config.label_nonfiction
+        )
         return PassageIndentAnalysis(
             profile="",
-            genre=config.label_nonfiction,
+            genre=genre,
             sum_r=0,
             sum_l=0,
             non_r1_runs=0,
             line_count=0,
+            colon_count=colon_n,
         )
     runs = filter_indent_runs(indent_runs(levels), config=config)
     sum_r = sum(n for ch, n in runs if ch == "R")
     sum_l = sum(n for ch, n in runs if ch == "L")
     non_r1 = sum(1 for ch, n in runs if ch == "R" and n != 1)
-    # 순서 고정: 시 → 대화문 → 소설 → 비문학
-    if sum_l < config.poetry_max_l_sum:
-        genre = config.label_si
-    elif sum_r > sum_l and sum_r < sum_l * config.dialogue_r_lt_l_factor:
+    # 순서 고정: 대화문 → 시 → 소설 → 비문학
+    if colon_n >= config.dialogue_min_colons:
         genre = config.label_dialogue
+    elif sum_l < config.poetry_max_l_sum:
+        genre = config.label_si
     elif non_r1 >= config.novel_min_non_r1_runs:
         genre = config.label_novel
     else:
@@ -187,15 +204,17 @@ def analyze_passage_indent(
         sum_l=sum_l,
         non_r1_runs=non_r1,
         line_count=sum(n for _, n in runs),
+        colon_count=colon_n,
     )
 
 
 def classify_passage_genre(
     x0s: list[float],
     *,
+    text: str | None = None,
     config: PassageIndentGenreConfig = DEFAULT_PASSAGE_INDENT_GENRE_CONFIG,
 ) -> str:
-    return analyze_passage_indent(x0s, config=config).genre
+    return analyze_passage_indent(x0s, text=text, config=config).genre
 
 
 def build_line_x0_index(pdf: PdfDocumentStructure) -> dict[str, float]:
@@ -250,6 +269,17 @@ def _passage_group_x0s(
     return column_relative_x0s(items, column_cut_x=column_cut_x)
 
 
+def _passage_group_text(group: ExamNode) -> str:
+    parts: list[str] = []
+    for child in group.children:
+        if child.node_type != "Passage":
+            continue
+        raw = child.source_range.raw_text
+        if raw:
+            parts.append(raw)
+    return "\n".join(parts)
+
+
 def analyze_passage_group_indent(
     group: ExamNode,
     *,
@@ -267,6 +297,7 @@ def analyze_passage_group_indent(
             block_line_ids=block_line_ids,
             column_cut_x=column_cut_x,
         ),
+        text=_passage_group_text(group),
         config=config,
     )
 

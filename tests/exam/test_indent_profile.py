@@ -27,11 +27,26 @@ def test_run_length_encode():
 
 
 def test_genre_switch_order():
-    # 1) 시: L < 10
+    # 1) 대화문: 쌍점(:) 5개 이상 — 최우선 (시 L 조건보다 앞)
+    assert (
+        classify_passage_genre(
+            [100.0] * 3,
+            text="사회자: a: b: c: d:",
+        )
+        == "대화문"
+    )
+    assert (
+        classify_passage_genre(
+            [110.0] * 20 + [100.0] * 3,
+            text="A：B：C：D：E：",
+        )
+        == "대화문"
+    )
+    # 2) 시: L < 10 (쌍점 부족)
     assert classify_passage_genre([110.0] * 20 + [100.0] * 3) == "시"
     assert classify_passage_genre([100.0] * 9) == "시"
-    # 2) 대화문: L≥10, R>L, R < L*1.5
-    assert classify_passage_genre([110.0] * 12 + [100.0] * 10) == "대화문"
+    # 예전 R/L 대화문 패턴은 쌍점 없으면 비문학(또는 소설 조건)
+    assert classify_passage_genre([110.0] * 12 + [100.0] * 10) == "비문학"
     # 3) 소설: L≥10, 대화문 아님, nonR1≥3
     novel = (
         [100.0] * 10
@@ -45,6 +60,14 @@ def test_genre_switch_order():
     assert classify_passage_genre(novel) == "소설"
     # 4) 비문학
     assert classify_passage_genre([110.0] + [100.0] * 15) == "비문학"
+
+
+def test_dialogue_min_colons_override():
+    cfg = PassageIndentGenreConfig(dialogue_min_colons=3)
+    x0s = [100.0] * 12
+    text = "a: b: c:"
+    assert classify_passage_genre(x0s, text=text) == "비문학"
+    assert classify_passage_genre(x0s, text=text, config=cfg) == "대화문"
 
 
 def test_ignore_large_r_runs():
@@ -70,7 +93,10 @@ def test_mode_b_label_suffix():
     analysis = analyze_passage_indent([110.0] + [100.0] * 15)
     assert analysis.genre == "비문학"
     assert analysis.sum_r == 1 and analysis.sum_l == 15
-    assert analysis.mode_b_label_suffix().startswith("비문학 · R1/L15 · nonR1=0")
+    assert analysis.colon_count == 0
+    assert analysis.mode_b_label_suffix().startswith(
+        "비문학 · R1/L15 · nonR1=0 · colon=0"
+    )
 
 
 def test_column_relative_x0s_mixed_columns_not_all_r():

@@ -349,12 +349,18 @@ def apply_genre_paragraph_splits(
                     items.append((lid, line_x0[lid]))
             analysis = analyze_passage_indent(
                 column_relative_x0s(items, column_cut_x=column_cut_x),
+                text="\n".join(
+                    (c.source_range.raw_text or "")
+                    for c in node.children
+                    if c.node_type == "Passage"
+                ),
                 config=config,
             )
             node.metadata["indent_genre"] = analysis.genre
             node.metadata["indent_profile"] = analysis.profile
             node.metadata["indent_sum_r"] = analysis.sum_r
             node.metadata["indent_sum_l"] = analysis.sum_l
+            node.metadata["indent_colon_count"] = analysis.colon_count
 
             new_children: list[ExamNode] = []
             i = 0
