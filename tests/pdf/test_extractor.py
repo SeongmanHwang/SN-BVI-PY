@@ -79,6 +79,8 @@ def test_merge_and_split(sample_pdf: Path):
 
 def test_detect_candidates():
     assert "Question" in detect_block_candidates("16. 발문입니다")
+    # 번호 모양은 후보일 뿐 — 보고서 목차 1.도 여기서는 Question 후보
+    assert "Question" in detect_block_candidates("1. 조사 방법: 설문 조사")
     assert "Choice" in detect_block_candidates("① 보기")
     assert "ExampleBox" in detect_block_candidates("〈보기〉")
     assert "ExampleBox" in detect_block_candidates("<보기2>")

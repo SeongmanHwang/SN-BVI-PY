@@ -57,3 +57,11 @@ def test_bold_flag_does_not_drive_line_order():
     lines = build_lines(spans, page_number=1, y_tolerance=3.0, page_width=400.0)
     assert len(lines) == 1
     assert lines[0].text == "앞에 뒤에"
+
+
+def test_line_is_bold_when_majority_of_chars_are_bold():
+    spans = [
+        _span(0, "Ⅰ. 조사 동기 및 목적", x0=100, x1=220, y0=100, y1=112, bold=True),
+    ]
+    lines = build_lines(spans, page_number=1, y_tolerance=3.0, page_width=400.0)
+    assert lines[0].is_bold is True

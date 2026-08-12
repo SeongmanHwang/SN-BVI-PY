@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from korean_exam_braille.app.common.patterns import PASSAGE_RANGE, QUESTION_NUM
+from korean_exam_braille.app.common.patterns import PASSAGE_RANGE
 from korean_exam_braille.app.exam.bracket_metadata import (
     metadata_from_candidate_tags,
 )
 from korean_exam_braille.app.exam.genre_paragraph_split import apply_genre_paragraph_splits
+from korean_exam_braille.app.exam.question_start import is_question_start
 from korean_exam_braille.app.exam.models import (
     ExamDocument,
     ExamNode,
@@ -82,6 +83,13 @@ class _GroupState:
     start_q: int | None = None
     end_q: int | None = None
     current_question: ExamNode | None = None
+    last_q: int | None = None
+
+    @property
+    def question_range(self) -> tuple[int, int] | None:
+        if self.start_q is None or self.end_q is None:
+            return None
+        return (self.start_q, self.end_q)
 
 
 @dataclass
@@ -128,15 +136,8 @@ class RuleExamStructureBuilder:
             )
             group = _GroupState(node=node, start_q=start_q, end_q=end_q)
 
-        def start_question(block: PdfBlock) -> ExamNode:
+        def start_question(block: PdfBlock, qnum: int | None) -> ExamNode:
             nonlocal orphan_question
-            m = QUESTION_NUM.search(block.text or "")
-            qnum = None
-            if m:
-                for g in m.groups():
-                    if g and g.isdigit():
-                        qnum = int(g)
-                        break
             q = _node_from_block(
                 block,
                 "Question",
@@ -145,6 +146,8 @@ class RuleExamStructureBuilder:
             if group is not None:
                 group.node.children.append(q)
                 group.current_question = q
+                if qnum is not None:
+                    group.last_q = qnum
                 orphan_question = None
                 relations.append(
                     ExamRelation(
@@ -202,7 +205,19 @@ class RuleExamStructureBuilder:
                 continue
 
             if tag == "Question":
-                start_question(block)
+                # 후보 태그만으로는 확정하지 않는다.
+                # PassageGroup [start~end] 안이면 그 번호만 문항, 밖의 1. 2.는 본문.
+                q_range = group.question_range if group is not None else None
+                last_q = group.last_q if group is not None else None
+                qnum = is_question_start(
+                    block.text or "",
+                    question_range=q_range,
+                    last_question=last_q,
+                )
+                if qnum is None:
+                    attach_body(block)
+                    continue
+                start_question(block, qnum)
                 continue
 
             if tag == "Choice":

@@ -5,6 +5,7 @@
 대화문: 내어쓰기(직전보다 왼쪽) 또는 연속 L에서 새 문단
 소설: 들여쓰기면 문단 시작 — 따옴표면 이어진 R까지, 아니면 이어진 L까지
 지문 표지: 줄 전체가 ``(가)`` 또는 ``(나)``이면 단독 문단 + ``section_label``
+표제 줄: 숫자/로마/대괄호로 시작하는 짧은 줄은 단독 문단 (볼드 필수는 설정)
 """
 
 from __future__ import annotations
@@ -12,6 +13,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from korean_exam_braille.app.common.plot_summary_markup import PLOT_SUMMARY_END_INK
 from korean_exam_braille.app.exam.indent_profile import (
     analyze_passage_indent,
     build_block_line_ids_index,
@@ -31,6 +33,15 @@ from korean_exam_braille.app.pdf.models import PdfDocumentStructure, PdfLine
 DOUBLE_QUOTE_START = re.compile(r'^["\u201c\u201d]')
 # 지문 구간 표지 — 줄 전체가 (가) 또는 (나)일 때만 (발문「(가)와 관련하여」제외)
 _SECTION_LABEL = re.compile(r"^\s*[\(（](가|나)[\)）]\s*$")
+# 표제: 대괄호 / 로마숫자 / 1. 2. 로 시작
+_HEADING_PREFIX = re.compile(
+    r"^\s*(?:"
+    r"\["
+    r"|[Ⅰ-Ⅻⅰ-ⅻ]+\s*[\.．。]?"
+    r"|[0-9]{1,2}\s*[\.．。]"
+    r")"
+)
+_STRIP_TAGS = re.compile(r"<[^>]+>")
 
 
 @dataclass
@@ -45,12 +56,54 @@ def line_starts_with_double_quote(text: str | None) -> bool:
     return bool(t and DOUBLE_QUOTE_START.match(t))
 
 
+def line_plain_text(text: str | None) -> str:
+    """밑줄 태그 등을 뺀 표제 길이 판정용 문자열."""
+    return _STRIP_TAGS.sub("", text or "").strip()
+
+
+def line_is_structural_heading(
+    line: PdfLine | None,
+    *,
+    config: PassageIndentGenreConfig = DEFAULT_PASSAGE_INDENT_GENRE_CONFIG,
+) -> bool:
+    """숫자·로마·대괄호로 시작하는 짧은 (선택)볼드 표제 줄."""
+    if line is None:
+        return False
+    plain = line_plain_text(line.text)
+    if not plain or plain == PLOT_SUMMARY_END_INK:
+        return False
+    if len(plain) > config.heading_max_chars:
+        return False
+    if not _HEADING_PREFIX.match(plain):
+        return False
+    if config.heading_require_bold and not line.is_bold:
+        return False
+    return True
+
+
 def line_section_label(text: str | None) -> str | None:
     """줄 전체가 지문 표지 ``(가)``/``(나)``이면 그 표지, 아니면 None."""
     m = _SECTION_LABEL.match(text or "")
     if not m:
         return None
     return f"({m.group(1)})"
+
+
+def _heading_split_starts(
+    rows: list[_PassageLine],
+    *,
+    config: PassageIndentGenreConfig,
+) -> list[int]:
+    """표제 줄은 단독 문단, 바로 다음 줄은 본문 문단 시작."""
+    starts: list[int] = []
+    n = len(rows)
+    for i, row in enumerate(rows):
+        if not line_is_structural_heading(row.line, config=config):
+            continue
+        starts.append(i)
+        if i + 1 < n:
+            starts.append(i + 1)
+    return starts
 
 
 def _gana_split_starts(texts: list[str]) -> list[int]:
@@ -311,6 +364,7 @@ def resplit_passage_run(
 
     texts = [r.line.text or "" for r in rows]
     gana_starts = _gana_split_starts(texts)
+    heading_starts = _heading_split_starts(rows, config=config)
 
     genre_starts: list[int] = [0]
     if len(rows) >= 2 and genre != config.label_si:
@@ -328,7 +382,9 @@ def resplit_passage_run(
         else:
             genre_starts = [0]
 
-    segs = _segments_from_starts(len(rows), genre_starts + gana_starts)
+    segs = _segments_from_starts(
+        len(rows), genre_starts + gana_starts + heading_starts
+    )
     if len(segs) <= 1:
         for p in passages:
             if p.node_type == "Passage":
@@ -395,6 +451,7 @@ def apply_genre_paragraph_splits(
                     for c in node.children
                     if c.node_type == "Passage"
                 ),
+                prompt_text=node.source_range.raw_text,
                 config=config,
             )
             node.metadata["indent_genre"] = analysis.genre

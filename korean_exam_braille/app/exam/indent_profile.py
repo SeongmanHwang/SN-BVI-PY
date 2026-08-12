@@ -40,11 +40,28 @@ class PassageIndentAnalysis:
         return " · ".join(parts)
 
 
+_FOOTNOTE_MARKS = "*＊※"
+
+
 def count_colons(text: str) -> int:
-    """반각·전각 쌍점(:)·(：) 개수."""
+    """반각·전각 쌍점(:)·(：) 개수.
+
+    각주 표지(``*`` / ``※``)와 함께 있는 쌍점은 대화문 집계에서 뺀다.
+    줄이 표지로 시작하면 그 줄 전체, 아니면 표지 뒤만 제외한다.
+    """
     if not text:
         return 0
-    return text.count(":") + text.count("：")
+    n = 0
+    for line in text.splitlines():
+        cut = len(line)
+        for i, ch in enumerate(line):
+            if ch not in _FOOTNOTE_MARKS:
+                continue
+            cut = 0 if line[:i].strip() == "" else i
+            break
+        segment = line[:cut]
+        n += segment.count(":") + segment.count("：")
+    return n
 
 
 def classify_indent_levels(
@@ -160,21 +177,34 @@ def filter_indent_runs(
     return merged
 
 
+def prompt_has_nonfiction_cue(
+    prompt_text: str | None,
+    *,
+    config: PassageIndentGenreConfig = DEFAULT_PASSAGE_INDENT_GENRE_CONFIG,
+) -> bool:
+    """제시문 첫 발문에 작문 초고 단서가 있으면 True."""
+    token = config.nonfiction_prompt_token
+    if not token or not prompt_text:
+        return False
+    return token in prompt_text
+
+
 def analyze_passage_indent(
     x0s: list[float],
     *,
     text: str | None = None,
+    prompt_text: str | None = None,
     config: PassageIndentGenreConfig = DEFAULT_PASSAGE_INDENT_GENRE_CONFIG,
 ) -> PassageIndentAnalysis:
     """쌍점 개수·L/R 런으로 장르·디버그 수치를 함께 반환."""
     colon_n = count_colons(text or "")
+    draft_cue = prompt_has_nonfiction_cue(prompt_text, config=config)
     levels = classify_indent_levels(x0s, config=config)
     if not levels:
-        genre = (
-            config.label_dialogue
-            if colon_n >= config.dialogue_min_colons
-            else config.label_nonfiction
-        )
+        if colon_n >= config.dialogue_min_colons:
+            genre = config.label_dialogue
+        else:
+            genre = config.label_nonfiction
         return PassageIndentAnalysis(
             profile="",
             genre=genre,
@@ -188,9 +218,11 @@ def analyze_passage_indent(
     sum_r = sum(n for ch, n in runs if ch == "R")
     sum_l = sum(n for ch, n in runs if ch == "L")
     non_r1 = sum(1 for ch, n in runs if ch == "R" and n != 1)
-    # 순서 고정: 대화문 → 시 → 소설 → 비문학
+    # 순서 고정: 대화문 → (발문 초고) 비문학 → 시 → 소설 → 비문학
     if colon_n >= config.dialogue_min_colons:
         genre = config.label_dialogue
+    elif draft_cue:
+        genre = config.label_nonfiction
     elif sum_l < config.poetry_max_l_sum:
         genre = config.label_si
     elif non_r1 >= config.novel_min_non_r1_runs:
@@ -212,9 +244,12 @@ def classify_passage_genre(
     x0s: list[float],
     *,
     text: str | None = None,
+    prompt_text: str | None = None,
     config: PassageIndentGenreConfig = DEFAULT_PASSAGE_INDENT_GENRE_CONFIG,
 ) -> str:
-    return analyze_passage_indent(x0s, text=text, config=config).genre
+    return analyze_passage_indent(
+        x0s, text=text, prompt_text=prompt_text, config=config
+    ).genre
 
 
 def build_line_x0_index(pdf: PdfDocumentStructure) -> dict[str, float]:
@@ -298,6 +333,7 @@ def analyze_passage_group_indent(
             column_cut_x=column_cut_x,
         ),
         text=_passage_group_text(group),
+        prompt_text=group.source_range.raw_text,
         config=config,
     )
 

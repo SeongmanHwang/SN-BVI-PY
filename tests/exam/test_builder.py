@@ -138,6 +138,72 @@ def test_header_footer_excluded_from_content_root():
     assert artifacts[0]["source_range"]["page_number"] == 1
 
 
+def test_numbered_outline_inside_passage_is_not_question():
+    """[28~30] 지문 안의 1. 2.는 문항이 아니고, 28.부터 문항이다."""
+    blocks = [
+        _block(
+            "g",
+            "[28 ~ 30] 다음은 학생들이 작성한 공동 보고서의 초고이다.",
+            order=0,
+            tags=["PassageGroup"],
+        ),
+        _block("title", "우리 학교 앞 자전거 도로 안전 실태 조사 보고서", order=1),
+        _block("s1", "Ⅰ. 조사 동기 및 목적", order=2),
+        _block("s2", "Ⅱ. 조사 계획", order=3),
+        _block("n1", "1. 조사 방법: 설문 조사, 현장 조사", order=4, tags=["Question"]),
+        _block("n2", "2. 조사 내용: 사고 현황 및 원인", order=5, tags=["Question"]),
+        _block("s3", "Ⅲ. 조사 결과", order=6),
+        _block("n3", "1. ○○로의 자전거 대 보행자 간 사고 현황", order=7, tags=["Question"]),
+        _block("fig", "[그림]", order=8, tags=["FigureAsset"]),
+        _block("n4", "2. 사고 원인 분석 및 해결 방안", order=9, tags=["Question"]),
+        _block("s4", "Ⅳ. 결론", order=10),
+        _block("q28", "28. ‘초고’의 글쓰기 방식으로 가장 적절한 것은?", order=11, tags=["Question"]),
+        _block("c1", "① 가", order=12, tags=["Choice"]),
+        _block("q29", "29. ㉠~㉢이 ‘Ⅲ. 조사 결과’에 구체화된 내용", order=13, tags=["Question"]),
+        _block("c2", "① 나", order=14, tags=["Choice"]),
+        _block("q30", "30. <보기>는 ‘Ⅳ. 결론’을 고쳐 쓴 것이다.", order=15, tags=["Question"]),
+        _block("c3", "① 다", order=16, tags=["Choice"]),
+    ]
+    exam = RuleExamStructureBuilder().build(_doc(blocks))
+    group = exam.root.children[0]
+    assert group.node_type == "PassageGroup"
+    types = [c.node_type for c in group.children]
+    assert types == [
+        "Passage",
+        "Passage",
+        "Passage",
+        "Passage",
+        "Passage",
+        "Passage",
+        "Passage",
+        "FigureAsset",
+        "Passage",
+        "Passage",
+        "Question",
+        "Question",
+        "Question",
+    ]
+    questions = [c for c in group.children if c.node_type == "Question"]
+    assert [q.metadata.get("question_number") for q in questions] == [28, 29, 30]
+    passages = [c for c in group.children if c.node_type == "Passage"]
+    assert passages[3].source_range.raw_text.startswith("1. 조사 방법")
+    assert passages[6].source_range.raw_text.startswith("1. ○○로의")
+    fig = next(c for c in group.children if c.node_type == "FigureAsset")
+    assert fig.id == "fig"
+    assert questions[0].children[0].node_type == "Choice"
+
+
+def test_orphan_question_without_passage_group_still_starts():
+    """지문 그룹이 없으면 1~45 번호 문항 후보를 그대로 문항으로 둔다."""
+    blocks = [
+        _block("q", "16. 다음 글의 내용으로 알맞은 것은?", order=0, tags=["Question"]),
+        _block("c", "① 가", order=1, tags=["Choice"]),
+    ]
+    exam = RuleExamStructureBuilder().build(_doc(blocks))
+    assert exam.root.children[0].node_type == "Question"
+    assert exam.root.children[0].metadata.get("question_number") == 16
+
+
 def test_passage_continues_across_footer_header():
     """쪽 장식 뒤에도 같은 PassageGroup에 지문이 이어진다."""
     page1 = [

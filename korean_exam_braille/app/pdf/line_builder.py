@@ -139,6 +139,20 @@ def _cluster_spans_by_y(
     return groups
 
 
+def _line_is_bold(spans: list[PdfSpan]) -> bool:
+    """공백 아닌 글자 과반이 볼드이면 True."""
+    chars = 0
+    bold_chars = 0
+    for span in spans:
+        n = len((span.text or "").replace(" ", "").replace("\t", ""))
+        if n == 0:
+            continue
+        chars += n
+        if span.is_bold:
+            bold_chars += n
+    return chars > 0 and bold_chars * 2 > chars
+
+
 def _join_line_text(group_sorted: list[PdfSpan]) -> str:
     """행 span을 좌→우로 이어 붙인다. 부분 밑줄 마커를 보존한다."""
     raw = "".join(
@@ -174,6 +188,7 @@ def _group_spans_into_lines(
                 span_ids=[s.id for s in group_sorted],
                 page_number=page_number,
                 reading_order=start_index + i,
+                is_bold=_line_is_bold(group_sorted),
             )
         )
     return lines

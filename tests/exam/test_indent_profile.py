@@ -5,6 +5,7 @@ from korean_exam_braille.app.exam.indent_profile import (
     classify_indent_levels,
     classify_passage_genre,
     column_relative_x0s,
+    count_colons,
     indent_profile_string,
     run_length_indent_string,
 )
@@ -42,12 +43,12 @@ def test_genre_switch_order():
         )
         == "대화문"
     )
-    # 2) 시: L < 10 (쌍점 부족)
+    # 2) 시: L < 15 (쌍점 부족)
     assert classify_passage_genre([110.0] * 20 + [100.0] * 3) == "시"
-    assert classify_passage_genre([100.0] * 9) == "시"
+    assert classify_passage_genre([100.0] * 14) == "시"
     # 예전 R/L 대화문 패턴은 쌍점 없으면 비문학(또는 소설 조건)
-    assert classify_passage_genre([110.0] * 12 + [100.0] * 10) == "비문학"
-    # 3) 소설: L≥10, 대화문 아님, nonR1≥3
+    assert classify_passage_genre([110.0] * 12 + [100.0] * 15) == "비문학"
+    # 3) 소설: L≥15, 대화문 아님, nonR1≥3
     novel = (
         [100.0] * 10
         + [110.0] * 2
@@ -60,11 +61,47 @@ def test_genre_switch_order():
     assert classify_passage_genre(novel) == "소설"
     # 4) 비문학
     assert classify_passage_genre([110.0] + [100.0] * 15) == "비문학"
+    # 대화문이 아니면 제시문 첫 발문「초고」→ 시·소설보다 비문학
+    assert (
+        classify_passage_genre(
+            [110.0] * 20 + [100.0] * 3,
+            prompt_text="[28 ~ 30] 다음은 공동 보고서의 초고이다.",
+        )
+        == "비문학"
+    )
+    assert (
+        classify_passage_genre(
+            novel,
+            prompt_text="[28 ~ 30] 다음은 학생들이 작성한 공동 보고서의 초고이다.",
+        )
+        == "비문학"
+    )
+    assert (
+        classify_passage_genre(
+            [100.0] * 3,
+            text="사회자: a: b: c: d:",
+            prompt_text="[1 ~ 3] 다음은 초고이다.",
+        )
+        == "대화문"
+    )
+
+
+def test_footnote_colons_excluded_from_dialogue_count():
+    assert count_colons("* 출처: a: b: c: d: e:") == 0
+    assert count_colons("※ 참고：가：나：") == 0
+    assert count_colons("사회자: 학생: 교사:\n* ㉠: 중략\n* 출처: 통계청") == 3
+    assert count_colons("사회자: 안녕 * 출처: 책") == 1
+    x0s = [100.0] * 16
+    footnotes_only = "* ㉠: 중략\n* ㉡: 중략\n* ㉢: 중략\n* 출처: 통계청\n※ 참고: 자료"
+    assert classify_passage_genre(x0s, text=footnotes_only) == "비문학"
+    dialogue = "사회자: a: b: c: d:\n* 출처: 책"
+    assert count_colons(dialogue) == 5
+    assert classify_passage_genre([100.0] * 3, text=dialogue) == "대화문"
 
 
 def test_dialogue_min_colons_override():
     cfg = PassageIndentGenreConfig(dialogue_min_colons=3)
-    x0s = [100.0] * 12
+    x0s = [100.0] * 16
     text = "a: b: c:"
     assert classify_passage_genre(x0s, text=text) == "비문학"
     assert classify_passage_genre(x0s, text=text, config=cfg) == "대화문"
@@ -75,7 +112,7 @@ def test_ignore_large_r_runs():
     analysis = analyze_passage_indent(x0s)
     assert analysis.profile == "L2"
     assert analysis.sum_r == 0 and analysis.sum_l == 2
-    assert analysis.genre == "시"  # L=2 < 10
+    assert analysis.genre == "시"  # L=2 < 15
     x0s44 = [100.0] * 2 + [110.0] * 44
     a44 = analyze_passage_indent(x0s44)
     assert a44.sum_r == 44

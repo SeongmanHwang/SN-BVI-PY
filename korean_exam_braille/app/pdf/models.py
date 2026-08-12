@@ -77,6 +77,8 @@ class PdfLine:
     bracket_label: str | None = None
     # 측면 짧은 마커(① 등) — 직렬화 시 행 텍스트 뒤에 붙임
     trailing_marker: str | None = None
+    # 행 span 과반이 볼드이면 True (표제 문단 판정용)
+    is_bold: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -88,6 +90,7 @@ class PdfLine:
             "reading_order": self.reading_order,
             "bracket_label": self.bracket_label,
             "trailing_marker": self.trailing_marker,
+            "is_bold": self.is_bold,
         }
 
     @classmethod
@@ -102,6 +105,7 @@ class PdfLine:
             reading_order=int(data.get("reading_order", 0)),
             bracket_label=data.get("bracket_label"),
             trailing_marker=data.get("trailing_marker"),
+            is_bold=bool(data.get("is_bold", False)),
         )
 
 

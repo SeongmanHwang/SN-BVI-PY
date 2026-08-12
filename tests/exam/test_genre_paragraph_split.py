@@ -2,6 +2,7 @@
 
 from korean_exam_braille.app.exam.genre_paragraph_split import (
     count_indented_double_quote_lines,
+    line_is_structural_heading,
     line_section_label,
     line_starts_with_double_quote,
     resplit_passage_run,
@@ -13,17 +14,19 @@ from korean_exam_braille.app.exam.indent_profile import (
 from korean_exam_braille.app.exam.models import ExamNode, SourceRange
 from korean_exam_braille.app.exam.passage_indent_config import (
     DEFAULT_PASSAGE_INDENT_GENRE_CONFIG as CFG,
+    PassageIndentGenreConfig,
 )
 from korean_exam_braille.app.pdf.models import PdfLine
 
 
-def _line(lid: str, text: str, x0: float, page: int = 1) -> PdfLine:
+def _line(lid: str, text: str, x0: float, page: int = 1, *, bold: bool = False) -> PdfLine:
     return PdfLine(
         id=lid,
         text=text,
         bbox=(x0, 0.0, x0 + 100.0, 12.0),
         span_ids=[],
         page_number=page,
+        is_bold=bold,
     )
 
 
@@ -68,6 +71,53 @@ def test_nonfiction_splits_on_indent():
     assert len(out) == 2
     assert "첫단락시작" in (out[0].source_range.raw_text or "")
     assert "새단락" in (out[1].source_range.raw_text or "")
+
+
+def test_structural_heading_detection():
+    assert line_is_structural_heading(_line("a", "Ⅰ. 조사 동기 및 목적", 100.0))
+    assert line_is_structural_heading(_line("b", "Ⅳ. 결론", 100.0))
+    assert line_is_structural_heading(_line("c", "2. 사고 원인 분석 및 해결 방안", 100.0))
+    assert line_is_structural_heading(_line("d", "[그림]", 100.0))
+    assert not line_is_structural_heading(_line("end", "[줄거리 끝]", 100.0))
+    long_item = "1. 조사 방법: 설문 조사, 현장 조사, 문헌 조사, 인터뷰"
+    assert not line_is_structural_heading(_line("e", long_item, 100.0))
+    assert not line_is_structural_heading(_line("f", "최근 ○○로에서 사고가 발생하였다.", 100.0))
+    require_bold = PassageIndentGenreConfig(heading_require_bold=True)
+    plain = _line("g", "Ⅰ. 조사 동기 및 목적", 100.0, bold=False)
+    bold = _line("h", "Ⅰ. 조사 동기 및 목적", 100.0, bold=True)
+    assert not line_is_structural_heading(plain, config=require_bold)
+    assert line_is_structural_heading(bold, config=require_bold)
+
+
+def test_nonfiction_heading_line_is_own_paragraph():
+    """마진 표제(Ⅰ.)는 들여쓰기가 없어도 단독 문단, 다음 줄부터 본문."""
+    lines = {
+        "l0": _line("l0", "앞 문단 끝.", 100.0),
+        "l1": _line("l1", "Ⅰ. 조사 동기 및 목적", 100.0, bold=True),
+        "l2": _line("l2", "최근 사고가 발생하였다.", 110.0),
+        "l3": _line("l3", "학생들의 안전이 우려된다.", 100.0),
+    }
+    block_line_ids = {"b1": ["l0", "l1", "l2", "l3"]}
+    passages = [
+        ExamNode(
+            id="p0",
+            node_type="Passage",
+            source_range=SourceRange(block_ids=["b1"], raw_text="x", page_number=1),
+        )
+    ]
+    out = resplit_passage_run(
+        passages,
+        genre=CFG.label_nonfiction,
+        lines_by_id=lines,
+        block_line_ids=block_line_ids,
+        config=CFG,
+        id_prefix="g",
+    )
+    texts = [(p.source_range.raw_text or "").replace("\n", " ").strip() for p in out]
+    assert "Ⅰ. 조사 동기 및 목적" in texts
+    heading = next(p for p in out if "Ⅰ. 조사 동기 및 목적" in (p.source_range.raw_text or ""))
+    assert (heading.source_range.raw_text or "").strip() == "Ⅰ. 조사 동기 및 목적"
+    assert any("최근 사고가" in t for t in texts)
 
 
 def test_dialogue_splits_on_outdent():

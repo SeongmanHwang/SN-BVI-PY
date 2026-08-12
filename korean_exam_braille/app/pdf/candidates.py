@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import re
 
-from korean_exam_braille.app.common.patterns import PASSAGE_RANGE, QUESTION_NUM
+from korean_exam_braille.app.common.patterns import (
+    PASSAGE_RANGE,
+    question_number_from_text,
+)
 
 _CHOICE = re.compile(
     r"(?:^|\n)\s*(?:"
@@ -40,12 +43,10 @@ def detect_block_candidates(
     if PASSAGE_RANGE.search(text):
         tags.append("PassageGroup")
 
-    m = QUESTION_NUM.search(text)
-    if m and "PassageGroup" not in tags:
-        for g in m.groups():
-            if g and g.isdigit() and 1 <= int(g) <= 45:
-                tags.append("Question")
-                break
+    # 번호 모양은 Question *후보*일 뿐. 확정은 Exam 빌더가
+    # PassageGroup [start~end] 범위·번호 진행으로 한다.
+    if "PassageGroup" not in tags and question_number_from_text(text) is not None:
+        tags.append("Question")
 
     if _CHOICE.search(text):
         tags.append("Choice")

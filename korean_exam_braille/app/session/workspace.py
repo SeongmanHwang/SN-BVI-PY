@@ -402,6 +402,7 @@ class ConversionWorkspace:
                             "x0_epsilon": indent_cfg.x0_epsilon,
                             "poetry_max_l_sum": indent_cfg.poetry_max_l_sum,
                             "dialogue_min_colons": indent_cfg.dialogue_min_colons,
+                            "nonfiction_prompt_token": indent_cfg.nonfiction_prompt_token,
                             "ignore_r_run_at_least": indent_cfg.ignore_r_run_at_least,
                             "novel_min_non_r1_runs": indent_cfg.novel_min_non_r1_runs,
                         },
