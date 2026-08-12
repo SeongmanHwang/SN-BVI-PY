@@ -11,7 +11,9 @@ from korean_exam_braille.app.pdf.boxes import line_mostly_in_box
 from korean_exam_braille.app.pdf.bracket_groups import (
     annotate_blocks_with_brackets,
     assign_lines_to_brackets,
+    build_region_spans,
     detect_bracket_geometries,
+    link_cross_page_brackets,
     remove_detected_label_text,
 )
 from korean_exam_braille.app.pdf.candidates import detect_block_candidates
@@ -121,7 +123,7 @@ def build_page_structure(
     # drawing과 원래 PDF 텍스트로 괄호를 먼저 찾은 뒤, 공백에 인쇄된
     # 물리적 [A]~[E]만 텍스트에서 제거한다. 의미는 아래 메타데이터로 보존.
     # (오른쪽·왼쪽 여백 꺾쇠 모두 detect_bracket_geometries 가 인식)
-    bracket_groups = detect_bracket_geometries(page)
+    bracket_groups = detect_bracket_geometries(page, profile=profile)
     remove_detected_label_text(spans, bracket_groups)
     spans = [span for span in spans if span.text]
     lines = build_lines(
@@ -198,7 +200,9 @@ def extract_pdf(
             if num < 1 or num > doc.page_count:
                 continue
             pages.append(build_page_structure(doc[num - 1], num, profile=layout))
+        link_cross_page_brackets(pages, profile=layout)
         layout_dict = layout.to_dict()
+        region_spans = build_region_spans(pages, profile=layout)
         return PdfDocumentStructure(
             source_path=str(path),
             page_count=doc.page_count,
@@ -208,6 +212,7 @@ def extract_pdf(
                 "extracted_pages": [p.page_number for p in pages],
                 "layout_profile": layout_dict,
                 "column_detection": layout_dict.get("column_detection", "shared"),
+                "region_spans": [span.to_dict() for span in region_spans],
             },
         )
     finally:

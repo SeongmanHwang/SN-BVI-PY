@@ -8,6 +8,7 @@ import fitz
 import pytest
 
 from korean_exam_braille.app.pdf.bracket_groups import (
+    build_region_spans,
     detect_and_assign_bracket_groups,
     detect_bracket_geometries,
 )
@@ -30,6 +31,8 @@ def _draw_bracket(
     y1: float,
     tick: float = 10.0,
     body_side: str = "left",
+    top_tick: bool = True,
+    bottom_tick: bool = True,
 ) -> None:
     """위·아래 세로선 + 본문 쪽 턱 (가운데 끊김).
 
@@ -40,10 +43,37 @@ def _draw_bracket(
         tip = stem_x + tick
     else:
         tip = stem_x - tick
-    page.draw_line(fitz.Point(tip, y0), fitz.Point(stem_x, y0), width=0.8)
+    if top_tick:
+        page.draw_line(fitz.Point(tip, y0), fitz.Point(stem_x, y0), width=0.8)
     page.draw_line(fitz.Point(stem_x, y0), fitz.Point(stem_x, gap_y0), width=0.8)
     page.draw_line(fitz.Point(stem_x, gap_y1), fitz.Point(stem_x, y1), width=0.8)
+    if bottom_tick:
+        page.draw_line(fitz.Point(tip, y1), fitz.Point(stem_x, y1), width=0.8)
+
+
+def _draw_open_top(
+    page: fitz.Page,
+    *,
+    stem_x: float,
+    y0: float,
+    y1: float,
+    tick: float = 10.0,
+    body_side: str = "right",
+) -> None:
+    """다음 면 상단: 위 턱 없이 아래 짧은 턱만 있는 이어짐 줄기."""
+    if body_side == "right":
+        tip = stem_x + tick
+    else:
+        tip = stem_x - tick
+    page.draw_line(fitz.Point(stem_x, y0), fitz.Point(stem_x, y1), width=0.8)
     page.draw_line(fitz.Point(tip, y1), fitz.Point(stem_x, y1), width=0.8)
+
+
+def _fontfile() -> Path:
+    malgun = Path(r"C:\Windows\Fonts\malgun.ttf")
+    if malgun.exists():
+        return malgun
+    return Path(r"C:\Windows\Fonts\arial.ttf")
 
 
 def test_synthetic_bracket_assigns_lines(tmp_path: Path):
@@ -298,3 +328,124 @@ def test_build_blocks_splits_before_bracket_preamble():
     assert len(start_blocks) == 1
     assert "손병진" not in start_blocks[0].text
     assert "네가" in start_blocks[0].text
+
+
+MARCH_PDF = Path(r"c:\Users\Seongman Hwang\Downloads\2026고2-3월국어.pdf")
+
+
+def test_synthetic_cross_page_bracket_keeps_region_open(tmp_path: Path):
+    """[A]는 페이지 끝에서 버리지 않고 다음 면 상단 괄호와 한 구간으로 잇는다."""
+    fontfile = _fontfile()
+    path = tmp_path / "bracket_cross_page.pdf"
+    doc = fitz.open()
+
+    page1 = doc.new_page(width=600, height=500)
+    page1.insert_font(fontname="f0", fontfile=str(fontfile))
+    _draw_bracket(
+        page1,
+        stem_x=430.0,
+        y0=280.0,
+        gap_y0=360.0,
+        gap_y1=375.0,
+        y1=490.0,
+        body_side="right",
+        bottom_tick=False,
+    )
+    page1.insert_text((432, 372), "[A]", fontsize=11, fontname="f0")
+    page1.insert_text((450, 300), "무슨 일인데", fontsize=12, fontname="f0")
+    page1.insert_text((450, 330), "할아버지가 물었다", fontsize=12, fontname="f0")
+
+    page2 = doc.new_page(width=600, height=500)
+    page2.insert_font(fontname="f0", fontfile=str(fontfile))
+    _draw_open_top(page2, stem_x=90.0, y0=40.0, y1=170.0, body_side="right")
+    page2.insert_text((110, 70), "친구는 담에 만나도 될 것 아니냐?", fontsize=12, fontname="f0")
+    page2.insert_text((110, 100), "뭣이?", fontsize=12, fontname="f0")
+    page2.insert_text((110, 130), "할아버지가 발끈했다.", fontsize=12, fontname="f0")
+    page2.insert_text((110, 220), "그때 밖에서 자동차 경적", fontsize=12, fontname="f0")
+
+    doc.save(path)
+    doc.close()
+
+    extracted = extract_pdf(path, page_numbers=[1, 2])
+    p1, p2 = extracted.pages
+    g1 = next(g for g in p1.bracket_groups if g.label == "[A]")
+    g2 = next(g for g in p2.bracket_groups if g.label == "[A]")
+    assert g1.open_end == "bottom"
+    assert g2.open_end == "top"
+    assert g1.body_side == g2.body_side == "right"
+    assert abs(g1.stem_x - g2.stem_x) > 100
+
+    text1 = " ".join(ln.text for ln in p1.lines if ln.bracket_label == "[A]")
+    text2 = " ".join(ln.text for ln in p2.lines if ln.bracket_label == "[A]")
+    assert "무슨 일인데" in text1
+    assert "친구는 담에" in text2
+    assert "뭣이" in text2
+    assert "발끈" in text2
+    assert "자동차 경적" not in text2
+
+    assert any("bracket-start:[A]" in (b.candidate_tags or []) for b in p1.blocks)
+    assert not any("bracket-end:[A]" in (b.candidate_tags or []) for b in p1.blocks)
+    assert not any("bracket-start:[A]" in (b.candidate_tags or []) for b in p2.blocks)
+    assert any("bracket-end:[A]" in (b.candidate_tags or []) for b in p2.blocks)
+
+
+def test_unlabeled_open_top_dropped_without_previous_marker(tmp_path: Path):
+    """라벨 없는 위-열림 줄기는 앞 면 [A]와 연결되지 않으면 버린다."""
+    path = tmp_path / "open_top_only.pdf"
+    doc = fitz.open()
+    page = doc.new_page(width=500, height=400)
+    _draw_open_top(page, stem_x=80.0, y0=30.0, y1=140.0, body_side="right")
+    page.insert_text((110, 70), "이어지는 본문", fontsize=12)
+    doc.save(path)
+    doc.close()
+
+    raw = fitz.open(path)
+    geos = detect_bracket_geometries(raw[0])
+    raw.close()
+    assert any(g.open_end == "top" and not g.label for g in geos)
+
+    extracted = extract_pdf(path, page_numbers=[1])
+    assert not any(g.open_end == "top" and not g.label for g in extracted.pages[0].bracket_groups)
+    assert not any(g.label == "" for g in extracted.pages[0].bracket_groups)
+
+
+@pytest.mark.skipif(not MARCH_PDF.exists(), reason="2026고2-3월 PDF not found")
+def test_exam_pages_14_15_cross_page_bracket_a():
+    """3월 고2 14→15면: 오른쪽 열 [A]가 다음 면 왼쪽 열까지 이어진다."""
+    extracted = extract_pdf(MARCH_PDF, page_numbers=[14, 15])
+    p14, p15 = extracted.pages
+    a14 = next(g for g in p14.bracket_groups if g.label == "[A]")
+    a15 = next(g for g in p15.bracket_groups if g.label == "[A]")
+    assert a14.open_end == "bottom"
+    assert a15.open_end == "top"
+    assert a14.body_side == a15.body_side == "right"
+
+    text14 = "\n".join(ln.text for ln in p14.lines if ln.bracket_label == "[A]")
+    text15 = "\n".join(ln.text for ln in p15.lines if ln.bracket_label == "[A]")
+    assert "사람이 사람 구실을 하려면" in text14
+    assert "무슨 일인데" in text14
+    assert "친구는 담에 만나도" in text15
+    assert "뭣이" in text15
+    assert "발끈" in text15
+    assert "자동차 경적" not in text15
+    assert "약혼식 날" not in text15
+    assert "㉤은 아버지가" not in text15
+
+    by14 = {ln.id: ln for ln in p14.lines}
+    by15 = {ln.id: ln for ln in p15.lines}
+    assert "사람이 사람 구실을 하려면" in (by14[a14.line_ids[0]].text or "")
+    assert (by15[a15.line_ids[-1]].text or "").endswith("할아버지가 발끈했다.")
+
+    layout = (extracted.metadata or {}).get("layout_profile")
+    cut = float(layout["column_cut_x"]) if isinstance(layout, dict) else None
+    regions = build_region_spans(extracted.pages, column_cut_x=cut)
+    region_a = next(r for r in regions if r.label == "[A]")
+    assert "사람이 사람 구실을 하려면" in region_a.start_text
+    assert region_a.end_text.endswith("할아버지가 발끈했다.")
+    assert region_a.start_page == 14
+    assert region_a.end_page == 15
+
+    assert any("bracket-start:[A]" in (b.candidate_tags or []) for b in p14.blocks)
+    assert not any("bracket-end:[A]" in (b.candidate_tags or []) for b in p14.blocks)
+    assert not any("bracket-start:[A]" in (b.candidate_tags or []) for b in p15.blocks)
+    assert any("bracket-end:[A]" in (b.candidate_tags or []) for b in p15.blocks)

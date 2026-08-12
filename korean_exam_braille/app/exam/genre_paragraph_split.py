@@ -27,6 +27,10 @@ from korean_exam_braille.app.exam.passage_indent_config import (
     DEFAULT_PASSAGE_INDENT_GENRE_CONFIG,
     PassageIndentGenreConfig,
 )
+from korean_exam_braille.app.pdf.bracket_groups import (
+    RegionSpan,
+    build_region_spans,
+)
 from korean_exam_braille.app.pdf.models import PdfDocumentStructure, PdfLine
 
 # 쌍따옴표만 (ASCII / 굽은 따옴표)
@@ -235,16 +239,30 @@ def _segments_from_starts(n: int, starts: list[int]) -> list[tuple[int, int]]:
 def _bracket_endpoint_index(
     pdf: PdfDocumentStructure,
 ) -> tuple[dict[str, str], dict[str, str]]:
-    """bracket_group 첫/끝 line_id → label."""
+    """bracket_group 첫/끝 line_id → label. 페이지를 넘는 조각은 열린 쪽을 끝으로 쓰지 않는다."""
     starts: dict[str, str] = {}
     ends: dict[str, str] = {}
     for page in pdf.pages:
         for group in page.bracket_groups or []:
-            if not group.line_ids:
+            if not group.line_ids or not group.label:
                 continue
-            starts[group.line_ids[0]] = group.label
-            ends[group.line_ids[-1]] = group.label
+            if group.open_end != "top":
+                starts[group.line_ids[0]] = group.label
+            if group.open_end != "bottom":
+                ends[group.line_ids[-1]] = group.label
     return starts, ends
+
+
+def _bracket_label_change_starts(rows: list[_PassageLine]) -> list[int]:
+    """구간 소속이 바뀌는 줄은 문단 경계. 재분할이 [A] 앞뒤를 한 덩어리로 합치지 않게."""
+    starts: list[int] = []
+    prev: str | None = None
+    for i, row in enumerate(rows):
+        lab = row.line.bracket_label
+        if i > 0 and lab != prev:
+            starts.append(i)
+        prev = lab
+    return starts
 
 
 def _passage_node_from_lines(
@@ -383,7 +401,8 @@ def resplit_passage_run(
             genre_starts = [0]
 
     segs = _segments_from_starts(
-        len(rows), genre_starts + gana_starts + heading_starts
+        len(rows),
+        genre_starts + gana_starts + heading_starts + _bracket_label_change_starts(rows),
     )
     if len(segs) <= 1:
         for p in passages:
@@ -408,6 +427,119 @@ def resplit_passage_run(
             )
         )
     return out
+
+
+def _passage_pdf_lines(
+    node: ExamNode,
+    *,
+    lines_by_id: dict[str, PdfLine],
+    block_line_ids: dict[str, list[str]],
+) -> list[PdfLine]:
+    meta_lines = node.metadata.get("line_ids")
+    if isinstance(meta_lines, list) and meta_lines:
+        lids = [str(x) for x in meta_lines]
+    else:
+        lids = [
+            lid
+            for bid in node.source_range.block_ids
+            for lid in block_line_ids.get(bid, [])
+        ]
+    return [lines_by_id[lid] for lid in lids if lid in lines_by_id]
+
+
+def _reading_pos(
+    page: int, column: int, y: float
+) -> tuple[int, int, float]:
+    return (page, column, y)
+
+
+def _line_reading_pos(
+    line: PdfLine, *, column_cut_x: float | None, end: bool = False
+) -> tuple[int, int, float]:
+    mid = (line.bbox[0] + line.bbox[2]) / 2.0
+    col = 0 if column_cut_x is None or mid < column_cut_x else 1
+    y = line.bbox[3] if end else line.bbox[1]
+    return _reading_pos(line.page_number, col, y)
+
+
+def _clear_bracket_meta(node: ExamNode) -> None:
+    for key in ("bracket_labels", "bracket_start_labels", "bracket_end_labels"):
+        node.metadata.pop(key, None)
+    tags = node.metadata.get("candidate_tags")
+    if isinstance(tags, list):
+        node.metadata["candidate_tags"] = [
+            tag for tag in tags if not str(tag).startswith("bracket")
+        ]
+
+
+def _write_bracket_meta(
+    node: ExamNode,
+    *,
+    labels: list[str],
+    starts: list[str],
+    ends: list[str],
+) -> None:
+    _clear_bracket_meta(node)
+    tags = list(node.metadata.get("candidate_tags") or [])
+    if labels:
+        node.metadata["bracket_labels"] = labels
+        tags.append(f"bracket:{','.join(labels)}")
+    if starts:
+        node.metadata["bracket_start_labels"] = starts
+        tags.append(f"bracket-start:{','.join(starts)}")
+    if ends:
+        node.metadata["bracket_end_labels"] = ends
+        tags.append(f"bracket-end:{','.join(ends)}")
+    if tags:
+        node.metadata["candidate_tags"] = tags
+
+
+def apply_region_labels_to_passages(
+    exam: ExamDocument,
+    pdf: PdfDocumentStructure,
+    *,
+    spans: list[RegionSpan] | None = None,
+    column_cut_x: float | None = None,
+) -> None:
+    """RegionSpan과 읽기 순서상 겹치는 모든 Passage에 구간 라벨을 투영한다."""
+    if column_cut_x is None:
+        column_cut_x = _layout_column_cut(pdf)
+    if spans is None:
+        spans = build_region_spans(pdf.pages, column_cut_x=column_cut_x)
+    if not spans:
+        return
+    lines_by_id = _index_lines(pdf)
+    block_line_ids = build_block_line_ids_index(pdf)
+
+    def walk(node: ExamNode) -> None:
+        if node.node_type == "Passage":
+            lines = _passage_pdf_lines(
+                node, lines_by_id=lines_by_id, block_line_ids=block_line_ids
+            )
+            if lines:
+                p_start = _line_reading_pos(lines[0], column_cut_x=column_cut_x)
+                p_end = _line_reading_pos(
+                    lines[-1], column_cut_x=column_cut_x, end=True
+                )
+                labels: list[str] = []
+                starts: list[str] = []
+                ends: list[str] = []
+                line_ids = {ln.id for ln in lines}
+                for region in spans:
+                    if p_end >= region.start_pos and p_start <= region.end_pos:
+                        if region.label not in labels:
+                            labels.append(region.label)
+                    if region.start_line_id and region.start_line_id in line_ids:
+                        if region.label not in starts:
+                            starts.append(region.label)
+                    if region.end_line_id and region.end_line_id in line_ids:
+                        if region.label not in ends:
+                            ends.append(region.label)
+                _write_bracket_meta(node, labels=labels, starts=starts, ends=ends)
+        for child in node.children:
+            walk(child)
+
+    walk(exam.root)
 
 
 def apply_genre_paragraph_splits(
@@ -495,3 +627,4 @@ def apply_genre_paragraph_splits(
             walk(child)
 
     walk(exam.root)
+    apply_region_labels_to_passages(exam, pdf, column_cut_x=column_cut_x)
