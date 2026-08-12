@@ -296,8 +296,11 @@ class TableBrailleTranslator:
         # 예외: ※ 앞 줄바꿈은 참고 표지로 유지한다.
         genre = node.metadata.get("indent_genre")
         keep_hard_newlines = (
-            node.node_type == "Passage"
-            and genre == DEFAULT_PASSAGE_INDENT_GENRE_CONFIG.label_si
+            node.node_type == "FlowchartAsset"
+            or (
+                node.node_type == "Passage"
+                and genre == DEFAULT_PASSAGE_INDENT_GENRE_CONFIG.label_si
+            )
         )
         text = ensure_newline_before_reference_mark(text)
         if node.node_type in {"Passage", "Choice", "Question"} and not keep_hard_newlines:

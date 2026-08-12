@@ -43,9 +43,17 @@ def detect_block_candidates(
     if PASSAGE_RANGE.search(text):
         tags.append("PassageGroup")
 
+    # 순서도 선형 묵자. 본문 `1.` 문항 후보보다 먼저 본다.
+    if text.lstrip().startswith("[그림: 순서도]"):
+        tags.append("FlowchartAsset")
+
     # 번호 모양은 Question *후보*일 뿐. 확정은 Exam 빌더가
     # PassageGroup [start~end] 범위·번호 진행으로 한다.
-    if "PassageGroup" not in tags and question_number_from_text(text) is not None:
+    if (
+        "PassageGroup" not in tags
+        and "FlowchartAsset" not in tags
+        and question_number_from_text(text) is not None
+    ):
         tags.append("Question")
 
     if _CHOICE.search(text):

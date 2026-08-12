@@ -133,15 +133,21 @@ def build_page_structure(
         profile=profile,
     )
     # 병렬 선택지(①×㉠/㉡): 반복 x정렬+마커+헤더 고신뢰 시에만 줄 재조합
+    column_cut_x = profile.column_cut_x if profile is not None else None
     lines = promote_parallel_choices_in_lines(
-        spans, lines, page_number=page_number
+        spans,
+        lines,
+        page_number=page_number,
+        column_cut_x=column_cut_x,
     )
     # [중략 … 줄거리] 표지 + 돋움·작은 글씨 런 끝에 [줄거리 끝]
     lines = annotate_plot_summary_lines(lines, spans, page_number=page_number)
     # 노트형(글자 밀집) 래스터는 [그림] 처리에서 제외
     figures = filter_graphic_figures(figures, lines)
     # 흩어진 원문자 행 병합 + 표·그림 승격 + 박스 표선
-    lines = linearize_page_graphics(page, lines, tables=tables, figures=figures)
+    lines = linearize_page_graphics(
+        page, lines, tables=tables, figures=figures, spans=spans
+    )
     for ln in lines:
         if ln.text and "※" in ln.text:
             ln.text = ensure_newline_before_reference_mark(ln.text)
@@ -164,6 +170,8 @@ def build_page_structure(
             for figure in figures
         ):
             block.candidate_tags.append("FigureAsset")
+        if any("-flowchart-" in (lid or "") for lid in block.line_ids):
+            block.candidate_tags.append("FlowchartAsset")
         block.candidate_tags = list(dict.fromkeys(block.candidate_tags))
     annotate_blocks_with_brackets(blocks, lines, bracket_groups)
     return PdfPageStructure(

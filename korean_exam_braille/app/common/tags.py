@@ -19,6 +19,7 @@ STRUCTURE_TAGS: tuple[str, ...] = (
     "FigureDescription",
     "TableAsset",
     "FigureAsset",
+    "FlowchartAsset",
     "Header",
     "Footer",
     "Separator",
@@ -43,6 +44,7 @@ EXAM_NODE_TYPES: tuple[str, ...] = (
     "Footnote",
     "TableAsset",
     "FigureAsset",
+    "FlowchartAsset",
     "EndNotice",
     "Unknown",
 )

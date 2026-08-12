@@ -15,7 +15,12 @@ from korean_exam_braille.app.pdf.boxes import (
     line_mostly_in_box,
 )
 from korean_exam_braille.app.pdf.figures import promote_figures_into_lines
-from korean_exam_braille.app.pdf.models import BBox, PdfFigure, PdfLine, PdfTable
+from korean_exam_braille.app.pdf.flowchart import (
+    detect_flowcharts,
+    exclude_flowchart_boxes,
+    promote_flowcharts_into_lines,
+)
+from korean_exam_braille.app.pdf.models import BBox, PdfFigure, PdfLine, PdfSpan, PdfTable
 from korean_exam_braille.app.pdf.tables import (
     box_matches_table,
     promote_tables_into_lines,
@@ -163,8 +168,9 @@ def linearize_page_graphics(
     *,
     tables: list[PdfTable] | None = None,
     figures: list[PdfFigure] | None = None,
+    spans: list[PdfSpan] | None = None,
 ) -> list[PdfLine]:
-    """흩어진 원문자 행 병합 + 표·그림 승격 + 박스 표선."""
+    """흩어진 원문자 행 병합 + 표·그림 승격 + 순서도 선형화 + 박스 표선."""
     table_list = tables or []
     figure_list = figures or []
     if not lines:
@@ -183,4 +189,10 @@ def linearize_page_graphics(
         for box in iter_box_rects(page)
         if not box_matches_table(box, table_list)
     ]
+    flowcharts = detect_flowcharts(boxes, spans or [])
+    if flowcharts:
+        lines = promote_flowcharts_into_lines(
+            lines, flowcharts, page_number=page_number
+        )
+        boxes = exclude_flowchart_boxes(boxes, flowcharts)
     return insert_box_rule_lines(lines, boxes, page_number=page_number)

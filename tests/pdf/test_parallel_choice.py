@@ -1,6 +1,11 @@
 # -*- coding: utf-8 -*-
 """병렬 선택지(①×㉠/㉡) 감지·재조합."""
 
+from pathlib import Path
+
+import pytest
+
+from korean_exam_braille.app.pdf.extractor import extract_pdf
 from korean_exam_braille.app.pdf.models import PdfLine, PdfSpan
 from korean_exam_braille.app.pdf.parallel_choice import (
     apply_parallel_choices,
@@ -8,6 +13,8 @@ from korean_exam_braille.app.pdf.parallel_choice import (
     format_parallel_choice_line,
     promote_parallel_choices_in_lines,
 )
+
+MARCH_PDF = Path(r"c:\Users\Seongman Hwang\Downloads\2026고2-3월국어.pdf")
 
 
 def _span(
@@ -260,3 +267,97 @@ def test_detect_q30_with_left_column_pollution():
     # 좌단 지문 span이 hit에 섞이면 bbox가 좌로 크게 펼쳐짐 → 금함
     assert hit.bbox[0] >= 400.0
     assert all("휴대폰" not in c and "초고" not in c for _, cols in hit.rows for c in cols)
+
+
+def test_detect_with_other_column_choice_row_between():
+    """좌단 ① 행이 우단 ③·④ 사이 y에 끼어도 ㉠/㉡ 표를 잇는다 (3면 8번형)."""
+    spans: list[PdfSpan] = []
+    idx = 0
+
+    def add(text: str, x0: float, y0: float, w: float, h: float = 11.0) -> None:
+        nonlocal idx
+        spans.append(_span(f"q{idx}", text, (x0, y0, x0 + w, y0 + h), idx=idx, size=11.2))
+        idx += 1
+
+    add("㉠", 477, 656, 20)
+    add("㉡", 585, 656, 20)
+    rows = [
+        (674, "①", "나모와", "남기"),
+        (691, "②", "나모와", "나뫼"),
+        (708, "③", "남과", "나뫼"),
+        (725, "④", "남과", "남기"),
+        (743, "⑤", "남와", "나뫼"),
+    ]
+    for y, marker, a, b in rows:
+        add(marker, 439, y, 11)
+        add(a, 472, y, 32)
+        add(b, 584, y, 22)
+    # 좌단 7번 ①이 ③(708)과 ④(725) 사이에 끼움
+    add("①ㄱ:", 98, 718, 40)
+    add("‘형이 시키는’이 꾸며 주는 역할을 하는 것으로 보아", 140, 718, 260)
+
+    hits = detect_parallel_choices(spans)
+    assert len(hits) == 1
+    hit = hits[0]
+    assert hit.headers == ["㉠", "㉡"]
+    assert [m for m, _ in hit.rows] == ["①", "②", "③", "④", "⑤"]
+    assert hit.rows[0][1] == ["나모와", "남기"]
+    assert hit.rows[4][1] == ["남와", "나뫼"]
+    assert all("형이 시키는" not in c for _, cols in hit.rows for c in cols)
+
+    cut_hits = detect_parallel_choices(spans, column_cut_x=422.6)
+    assert len(cut_hits) == 1
+    assert cut_hits[0].rows[3][1] == ["남과", "남기"]
+
+
+def test_promote_interleaved_columns_formats_slash_line():
+    spans: list[PdfSpan] = []
+    idx = 0
+
+    def add(text: str, x0: float, y0: float, w: float, h: float = 11.0) -> None:
+        nonlocal idx
+        spans.append(_span(f"r{idx}", text, (x0, y0, x0 + w, y0 + h), idx=idx, size=11.2))
+        idx += 1
+
+    add("㉠", 477, 656, 20)
+    add("㉡", 585, 656, 20)
+    add("①", 439, 674, 11)
+    add("나모와", 472, 674, 32)
+    add("남기", 584, 674, 22)
+    add("②", 439, 691, 11)
+    add("나모와", 472, 691, 32)
+    add("나뫼", 584, 691, 22)
+    add("③", 439, 708, 11)
+    add("남과", 477, 708, 22)
+    add("나뫼", 584, 708, 22)
+    add("④", 439, 725, 11)
+    add("남과", 477, 725, 22)
+    add("남기", 584, 725, 22)
+    add("⑤", 439, 743, 11)
+    add("남와", 477, 743, 22)
+    add("나뫼", 584, 743, 22)
+    add("①ㄱ:", 98, 718, 40)
+
+    glued = [
+        PdfLine(
+            id="g0",
+            text="①나모와남기",
+            bbox=(439, 674, 606, 685),
+            span_ids=["r2", "r3", "r4"],
+            page_number=1,
+        )
+    ]
+    out = promote_parallel_choices_in_lines(spans, glued, page_number=1)
+    assert any(ln.text == "① ㉠ 나모와 / ㉡ 남기" for ln in out)
+    assert any(ln.text == "⑤ ㉠ 남와 / ㉡ 나뫼" for ln in out)
+
+
+@pytest.mark.skipif(not MARCH_PDF.exists(), reason="2026고2-3월 PDF not found")
+def test_exam_page3_q8_parallel_ganada_columns():
+    extracted = extract_pdf(MARCH_PDF, page_numbers=[3])
+    page = extracted.pages[0]
+    texts = [ln.text or "" for ln in page.lines]
+    joined = "\n".join(texts)
+    assert "① ㉠ 나모와 / ㉡ 남기" in joined
+    assert "⑤ ㉠ 남와 / ㉡ 나뫼" in joined
+    assert "①나모와남기" not in joined

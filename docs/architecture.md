@@ -75,10 +75,10 @@ PDF 파일
 1. **span** (`extract_page_spans`) — rawdict + opaque→`/` · `char_bboxes`
 2. **표·그림·밑줄·꺾쇠** (`tables`, `figures`, `emphasis`, `bracket_groups`)
 3. **줄** (`line_builder`) — 열·`y_mid` 클러스터 + `<u>`
-4. **병렬 선택지** (`parallel_choice`) — ①×㉠/㉡ 고신뢰만 재조합
+4. **병렬 선택지** (`parallel_choice`) — ①×㉠/㉡ 고신뢰만 재조합. 단 분리·다른 단 끼움 행 허용
 5. **중략 줄거리** (`plot_summary`) → `[줄거리 끝]`; 노트형 그림 필터
-6. **그래픽 선형화** (`graphic_linearize`) — 원문자 병합·표/그림/`─` 표선
-7. **※ 앞 줄바꿈** · 블록 · **측면 마커** · reading order · 후보 태그
+6. **그래픽 선형화** (`graphic_linearize`) — 원문자 병합·표/그림·**순서도**(`flowchart`)·비순서도 `─` 표선
+7. **※ 앞 줄바꿈** · 블록 · **측면 마커** · reading order · 후보 태그 (`FlowchartAsset` 포함)
 
 상세 순서·함정: [extraction_and_translation.md](extraction_and_translation.md).  
 진단 UI는 **읽기 전용**이다. **제품 목표는 이 단계 자동 정확도를 올려 UI 수정을 불필요하게 하는 것**이다.
@@ -88,7 +88,8 @@ PDF 파일
 `RuleExamStructureBuilder`:
 
 1. 페이지·`reading_order` 순으로 블록 순회.
-2. 후보 태그 우선순위로 PassageGroup / Question / Choice / ExampleBox 등 부착.
+2. 후보 태그 우선순위로 PassageGroup / **FlowchartAsset** / Question / Choice / ExampleBox 등 부착.
+   순서도는 Question의 `1.`보다 앞(단계 번호가 문항이 되지 않게).
 3. `[N~M]`·문항 번호로 메타데이터 채움, 지문↔문항 `ExamRelation` 생성.
 4. **`apply_genre_paragraph_splits`**: 들여쓰기로 장르(시·대화문·소설·비문학) 판정,
    장르별 Passage 문단 재분할, Passage에 `indent_genre` 전파 (시는 장르 재분할 없음).
@@ -105,7 +106,7 @@ PDF 파일
 
 1. Exam 노드 텍스트 → (한자 음독/병기 접기) → 한글 음절·약자·시험 토큰 → ASCII 셀.
 2. 처리 순서·셀 충돌·로마·원문자·`예` 붙임줄·수표 수식 등은 [extraction_and_translation.md](extraction_and_translation.md) §2–3.
-3. Passage/Choice/Question은 하드 개행을 공백으로 합침. **시**(`indent_genre`)와 **※ 앞 `\n99`** 만 하드 개행 유지.
+3. Passage/Choice/Question은 하드 개행을 공백으로 합침. **시**(`indent_genre`)·**FlowchartAsset**·**※ 앞 `\n99`** 만 하드 개행 유지.
 4. 출력: `BrailleSequence` (node_type · indent_genre · keep_hard_newlines 등).
 
 역점역: [reverse_translation.md](reverse_translation.md). **최종 정합 척도는 ASCII 셀 비교**.

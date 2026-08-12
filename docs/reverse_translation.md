@@ -155,8 +155,10 @@ flowchart TD
 | `7`…`7` | ‘…’ | 드러냄표 (`7a7` 원문자보다 후순위) |
 | `"1` / `11` | : | 쌍점(규정 ⠐⠂; `11`은 관례). **`3`(종성 ㄴ) 아님** |
 
-보기 중첩 박스는 PDF에서 표선 묵자 행(`────`)으로 편다. 밑줄 아래 원문자는
-본문으로 끌어올리지 않고 PDF 행 배치를 유지한다 (`pdf/graphic_linearize.py`).
+보기 중첩 박스는 PDF에서 표선 묵자 행(`────`)으로 편다. **순서도 상자**는
+예외로, 표선 없이 번호·예/아니요 선형 묵자로 승격한다 (`pdf/flowchart.py`).
+밑줄 아래 원문자는 본문으로 끌어올리지 않고 PDF 행 배치를 유지한다
+(`pdf/graphic_linearize.py`).
 아래는 **PDF 레이아웃 예시**일 뿐이며, 점역 전용 «향찰 2줄 분리» 모드는 없다
 ([extraction_and_translation.md](extraction_and_translation.md) §3.3).
 
@@ -174,8 +176,8 @@ flowchart TD
 
 - 묵자 문자열 정규식 후처리 (예: `,‘보기’,` → `<보기>`, `<U:>`+`(훈-음)` → `<한자>`)
 - 미해석 셀을 그대로 ASCII로 흘리는 폴백
-- 한자·보기 상자의 “모드” — PDF 박스는 표선 행으로 직렬화함 (`graphic_linearize`).
-  별도 Exam “상자 모드” 상태 기계는 두지 않음.
+- 한자·보기 상자의 “모드” — 일반 PDF 박스는 표선 행, 순서도만 `FlowchartAsset`
+  선형 묵자 (`graphic_linearize` / `flowchart`). 별도 Exam “상자 모드” 상태 기계는 두지 않음.
 - 한자 전환 표(`⠴`/`0` 전치) — 현행 규정에 일반 한자용 전환 표가 없음.
   정방향은 `common/hanja_reading.py`에서 **단독→음독, 병기→한자 생략**만 수행.
   병기: **한글(한자)** 만 두음법칙 동등으로 접고 (`노모(老母)`→`노모`),
@@ -202,6 +204,7 @@ flowchart TD
 | `tests/brf/test_reverse_jong_comma.py` | 종성·인라인 범위 |
 | `tests/brf/test_reverse_exam_structure.py` | 보기·[N점]·쌍점·표선·`a~e` |
 | `tests/pdf/test_graphic_linearize.py` | ⓐ+`<u>`·박스 표선 직렬화·왕복 |
+| `tests/pdf/test_flowchart.py` | 순서도 선형 묵자·표선 제거·Q8 회귀 |
 | `tests/braille/test_jamo_symbols.py` | 호환 자모 온표 라운드트립 |
 | `tests/braille/test_translator.py` | 정·역 스모크 |
 

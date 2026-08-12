@@ -23,6 +23,8 @@ _MIN_TEXT_LANES = 2
 _MIN_CONFIDENCE = 0.78
 # 페이지 2단(선택지|본문) 오탐 방지: ㉠/㉡류 열 헤더 없으면 승격하지 않음
 _REQUIRE_COLUMN_HEADERS = True
+# 다른 단 한 줄이 ①~⑤ 사이에 끼어도 같은 열 연속으로 본다
+_MAX_ROW_INTERRUPT = 42.0
 
 
 @dataclass
@@ -261,15 +263,108 @@ def _score_hit(
     return min(1.0, score)
 
 
+def _marker_x(cells: list[_Cell], marker: str) -> float | None:
+    for cell in cells:
+        peeled, _rest = _peel_marker(cell.text)
+        if peeled == marker or cell.text.strip() == marker:
+            return cell.x_mid
+    return None
+
+
+def _spans_for_column(
+    spans: list[PdfSpan],
+    *,
+    cut: float,
+    column: int,
+) -> list[PdfSpan]:
+    out: list[PdfSpan] = []
+    for span in spans:
+        mid = (span.bbox[0] + span.bbox[2]) / 2.0
+        if column == 0 and mid < cut:
+            out.append(span)
+        elif column == 1 and mid >= cut:
+            out.append(span)
+    return out
+
+
+def _collect_sequential_choice_rows(
+    rows: list[_Row],
+    start: int,
+    *,
+    y_interrupt: float,
+    x_tol: float,
+) -> tuple[list[tuple[_Row, str, list[_Cell]]], int]:
+    """①~⑤를 같은 마커 x로 잇는다. 다른 단 행은 짧은 y 간격이면 건너뛴다."""
+    choice_rows: list[tuple[_Row, str, list[_Cell]]] = []
+    expected = list(_CHOICE_MARKERS)
+    j = start
+    last_y = rows[start].y_mid
+    marker_x: float | None = None
+    while j < len(rows) and len(choice_rows) < 5:
+        row = rows[j]
+        if choice_rows and row.y_mid - last_y > y_interrupt:
+            break
+        parsed = _parse_choice_row(row.cells)
+        want = expected[len(choice_rows)]
+        mx = _marker_x(row.cells, want)
+        same_stem = marker_x is None or mx is None or abs(mx - marker_x) <= x_tol
+        if parsed is not None and parsed[0] == want and same_stem:
+            marker, bodies = parsed
+            if marker_x is None:
+                marker_x = mx
+            choice_rows.append((row, marker, bodies))
+            last_y = row.y_mid
+            j += 1
+            continue
+        if choice_rows:
+            j += 1
+            continue
+        break
+    return choice_rows, j
+
+
 def detect_parallel_choices(
     spans: list[PdfSpan],
     *,
     y_tol: float | None = None,
     x_gap_min: float | None = None,
     lane_tol: float | None = None,
+    column_cut_x: float | None = None,
 ) -> list[ParallelChoiceHit]:
-    """span 기하에서 병렬 선택지 후보를 찾는다. 낮은 신뢰도는 버린다."""
+    """span 기하에서 병렬 선택지 후보를 찾는다. 낮은 신뢰도는 버린다.
+
+    ``column_cut_x`` 가 있으면 좌·우 단을 나눠 각각 찾는다. 2단 시험에서
+    다른 열 ①이 같은 면 y 사이에 끼어도 우단 ㉠/㉡ 표를 유지하기 위함이다.
+    """
     usable = [s for s in spans if (s.text or "").strip()]
+    if column_cut_x is not None:
+        hits: list[ParallelChoiceHit] = []
+        for col in (0, 1):
+            band = _spans_for_column(usable, cut=column_cut_x, column=col)
+            hits.extend(
+                _detect_parallel_choices_in_band(
+                    band,
+                    y_tol=y_tol,
+                    x_gap_min=x_gap_min,
+                    lane_tol=lane_tol,
+                )
+            )
+        return hits
+    return _detect_parallel_choices_in_band(
+        usable,
+        y_tol=y_tol,
+        x_gap_min=x_gap_min,
+        lane_tol=lane_tol,
+    )
+
+
+def _detect_parallel_choices_in_band(
+    usable: list[PdfSpan],
+    *,
+    y_tol: float | None = None,
+    x_gap_min: float | None = None,
+    lane_tol: float | None = None,
+) -> list[ParallelChoiceHit]:
     if len(usable) < 8:
         return []
 
@@ -278,6 +373,8 @@ def detect_parallel_choices(
     y_tolerance = y_tol if y_tol is not None else max(2.5, med_size * 0.55)
     gap_min = x_gap_min if x_gap_min is not None else max(10.0, med_size * 1.2)
     l_tol = lane_tol if lane_tol is not None else max(14.0, med_size * 2.2)
+    y_interrupt = max(_MAX_ROW_INTERRUPT, med_size * 3.5)
+    x_tol = max(36.0, l_tol * 1.5)
 
     row_groups = _cluster_by_y(usable, y_tol=y_tolerance)
     rows: list[_Row] = []
@@ -296,20 +393,9 @@ def detect_parallel_choices(
             i += 1
             continue
 
-        # 연속 선택지 행 수집
-        choice_rows: list[tuple[_Row, str, list[_Cell]]] = []
-        j = i
-        expected = list(_CHOICE_MARKERS)
-        while j < len(rows) and len(choice_rows) < 5:
-            p = _parse_choice_row(rows[j].cells)
-            if p is None:
-                break
-            marker, bodies = p
-            want = expected[len(choice_rows)]
-            if marker != want:
-                break
-            choice_rows.append((rows[j], marker, bodies))
-            j += 1
+        choice_rows, j = _collect_sequential_choice_rows(
+            rows, i, y_interrupt=y_interrupt, x_tol=x_tol
+        )
 
         if len(choice_rows) < _MIN_CHOICE_ROWS:
             i += 1
@@ -348,16 +434,20 @@ def detect_parallel_choices(
             i += 1
             continue
 
-        # 헤더: 첫 선택지 바로 위 행 — 필수(페이지 2단 오탐 차단)
+        # 헤더: 첫 선택지 위쪽 가까운 행 — 필수(페이지 2단 오탐 차단)
         headers: list[str] = []
-        if i > 0:
-            hdr_cells = _header_cells(rows[i - 1].cells)
+        header_tol = max(36.0, l_tol * 2.5)
+        for k in range(i - 1, max(-1, i - 4), -1):
+            if rows[i].y_mid - rows[k].y_mid > y_interrupt:
+                break
+            hdr_cells = _header_cells(rows[k].cells)
             if len(hdr_cells) == len(lanes) and _headers_align_lanes(
-                hdr_cells, lanes, tol=max(36.0, l_tol * 2.5)
+                hdr_cells, lanes, tol=header_tol
             ):
                 headers = [c.text.strip() for c in hdr_cells]
                 for hc in hdr_cells:
                     all_spans.extend(hc.spans)
+                break
 
         if _REQUIRE_COLUMN_HEADERS and len(headers) != len(lanes):
             i += 1
@@ -522,9 +612,10 @@ def promote_parallel_choices_in_lines(
     lines: list[PdfLine],
     *,
     page_number: int,
+    column_cut_x: float | None = None,
 ) -> list[PdfLine]:
     """감지 → 적용 한 번에. 미검출 시 lines 그대로."""
-    hits = detect_parallel_choices(spans)
+    hits = detect_parallel_choices(spans, column_cut_x=column_cut_x)
     if not hits:
         return lines
     return apply_parallel_choices(lines, hits, page_number=page_number)
