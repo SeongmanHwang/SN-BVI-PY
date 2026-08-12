@@ -99,6 +99,8 @@ PDF 파일
 
 ### 4.3 점역 (`braille/`)
 
+본문 루프는 `body.py`: `tokenize_body` (종류) → `encode_body` (종류별 점역). 줄 단위 전처리·고정 토큰은 기존 `translator.py`.
+
 `TableBrailleTranslator`:
 
 1. Exam 노드 텍스트 → (한자 음독/병기 접기) → 한글 음절·약자·시험 토큰 → ASCII 셀.
