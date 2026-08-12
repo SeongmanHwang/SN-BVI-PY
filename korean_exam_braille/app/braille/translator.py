@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 
 from korean_exam_braille.app.braille.models import BrailleSequence, BrailleToken
@@ -102,6 +103,10 @@ _YEOSS_COUPLING_CHO = frozenset({"ㅎ", "ㅅ", "ㄷ", "ㅈ", "ㅋ", "ㅍ"})
 _COUPLING_MARK = "-"  # 붙임줄 ⠤ (3-6)
 # 「예」(ㅇ+ㅖ, 무받침): 앞 음절이 받침이 없으면 `/`(종성 ㅆ과 동형)이
 # 받침으로 붙어 「윴/갰…」이 되므로 붙임줄을 끼운다. 어절 선두·받침 뒤는 `/`만.
+
+# 표에 없는 묵자 — 조용히 버리지 않고 온표+?(``=?``) + 경고.
+UNKNOWN_PRINT_ASCII = "=?"
+_LOG = logging.getLogger(__name__)
 
 _PUNCT_TO_ASCII: dict[str, str] = {
     ".": "4",
@@ -365,14 +370,18 @@ def _is_hangul(ch: str) -> bool:
     return decompose_hangul(ch) is not None
 
 
+def _is_ascii_digit(ch: str) -> bool:
+    return "0" <= ch <= "9"
+
+
 def _adjacent_to_digit(text: str, i: int) -> bool:
-    """수식 `<` `>` `-` 판별: 앞·뒤가 숫자이면 수표 기호로 점역."""
-    if i > 0 and text[i - 1].isdigit():
+    """수식 `<` `>` `-` 판별: 앞·뒤가 ASCII 숫자이면 수표 기호로 점역."""
+    if i > 0 and _is_ascii_digit(text[i - 1]):
         return True
     j = i + 1
     while j < len(text) and text[j] in " \t":
         j += 1
-    return j < len(text) and text[j].isdigit()
+    return j < len(text) and _is_ascii_digit(text[j])
 
 
 def _trailing_hangul_syllables(text: str, end: int) -> int:
@@ -390,7 +399,17 @@ def _collapse_long_middot_runs(text: str) -> str:
     return _LONG_MIDDOT_RUN.sub("····", text)
 
 
-def hangul_text_to_ascii(text: str) -> str:
+def format_unknown_print_warning(chars: list[str]) -> str:
+    uniq = list(dict.fromkeys(chars))
+    shown = ", ".join(f"{c}(U+{ord(c):04X})" for c in uniq)
+    return f"점역: 알 수 없는 문자 {shown} → 대체 셀 {UNKNOWN_PRINT_ASCII}"
+
+
+def hangul_text_to_ascii(
+    text: str,
+    *,
+    unknown_chars: list[str] | None = None,
+) -> str:
     """묵자 문자열 → Braille ASCII (개행 보존).
 
     PUA 등 불투명 코드포인트는 빗금(/)으로 바꾼 뒤 점역한다.
@@ -403,11 +422,17 @@ def hangul_text_to_ascii(text: str) -> str:
     그림 자리표시 ``[그림]`` 은 고정 점역(그림 생략)으로 바꾼다.
     ``[줄거리 끝]`` 행도 고정 ASCII로 점역한다.
     """
-    ascii_text, _mask = hangul_text_to_ascii_with_roman_mask(text)
+    ascii_text, _mask = hangul_text_to_ascii_with_roman_mask(
+        text, unknown_chars=unknown_chars
+    )
     return ascii_text
 
 
-def hangul_text_to_ascii_with_roman_mask(text: str) -> tuple[str, list[bool]]:
+def hangul_text_to_ascii_with_roman_mask(
+    text: str,
+    *,
+    unknown_chars: list[str] | None = None,
+) -> tuple[str, list[bool]]:
     """점역 ASCII와, 각 ASCII 문자가 로마자(라틴) 구간인지 마스크.
 
     마스크는 레이아웃 줄바꿈 시 «새 줄이 영어 구간으로 시작하는데
@@ -417,6 +442,8 @@ def hangul_text_to_ascii_with_roman_mask(text: str) -> tuple[str, list[bool]]:
     text = replace_hanja_with_reading(text)
     text = _collapse_long_middot_runs(text)
     text = ensure_newline_before_reference_mark(text)
+    collected = unknown_chars if unknown_chars is not None else []
+    unknown_start = len(collected)
     ascii_parts: list[str] = []
     mask_parts: list[list[bool]] = []
     lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
@@ -434,7 +461,7 @@ def hangul_text_to_ascii_with_roman_mask(text: str) -> tuple[str, list[bool]]:
             ascii_parts.append(_TABLE_RULE_ASCII)
             mask_parts.append([False] * len(_TABLE_RULE_ASCII))
         else:
-            a, m = _encode_line_with_emphasis_masked(line)
+            a, m = _encode_line_with_emphasis_masked(line, unknown=collected)
             ascii_parts.append(a)
             mask_parts.append(m)
     joined = "".join(ascii_parts)
@@ -442,6 +469,9 @@ def hangul_text_to_ascii_with_roman_mask(text: str) -> tuple[str, list[bool]]:
     for part in mask_parts:
         mask.extend(part)
     assert len(mask) == len(joined)
+    newly = collected[unknown_start:]
+    if newly:
+        _LOG.warning(format_unknown_print_warning(newly))
     return joined, mask
 
 
@@ -451,24 +481,30 @@ def _encode_line_with_emphasis(line: str) -> str:
     return ascii_text
 
 
-def _encode_line_with_emphasis_masked(line: str) -> tuple[str, list[bool]]:
+def _encode_line_with_emphasis_masked(
+    line: str,
+    *,
+    unknown: list[str] | None = None,
+) -> tuple[str, list[bool]]:
     """밑줄 태그를 강조 점자로 바꾼 뒤 일반 점역 + 로마 마스크."""
     ascii_parts: list[str] = []
     mask: list[bool] = []
     cursor = 0
     for m in _U_TAG.finditer(line):
-        a, mk = _encode_line_masked(line[cursor : m.start()])
+        a, mk = _encode_line_masked(
+            line[cursor : m.start()], unknown=unknown
+        )
         ascii_parts.append(a)
         mask.extend(mk)
         ascii_parts.append(_EMPHASIS_OPEN)
         mask.extend([False] * len(_EMPHASIS_OPEN))
-        a, mk = _encode_line_masked(m.group(1))
+        a, mk = _encode_line_masked(m.group(1), unknown=unknown)
         ascii_parts.append(a)
         mask.extend(mk)
         ascii_parts.append(_EMPHASIS_CLOSE)
         mask.extend([False] * len(_EMPHASIS_CLOSE))
         cursor = m.end()
-    a, mk = _encode_line_masked(line[cursor:])
+    a, mk = _encode_line_masked(line[cursor:], unknown=unknown)
     ascii_parts.append(a)
     mask.extend(mk)
     return "".join(ascii_parts), mask
@@ -480,7 +516,11 @@ def _encode_line(line: str) -> str:
     return ascii_text
 
 
-def _encode_line_masked(line: str) -> tuple[str, list[bool]]:
+def _encode_line_masked(
+    line: str,
+    *,
+    unknown: list[str] | None = None,
+) -> tuple[str, list[bool]]:
     """지문 범위·문항 번호 + 본문 점역과 로마 마스크."""
     ascii_parts: list[str] = []
     mask: list[bool] = []
@@ -494,7 +534,9 @@ def _encode_line_masked(line: str) -> tuple[str, list[bool]]:
         cursor = m_q.end()
 
     for m in PASSAGE_RANGE.finditer(line, cursor):
-        a, mk = _hangul_body_to_ascii_masked(line[cursor : m.start()])
+        a, mk = _hangul_body_to_ascii_masked(
+            line[cursor : m.start()], unknown=unknown
+        )
         ascii_parts.append(a)
         mask.extend(mk)
         piece = _encode_passage_range(m)
@@ -502,7 +544,7 @@ def _encode_line_masked(line: str) -> tuple[str, list[bool]]:
         mask.extend([False] * len(piece))
         cursor = m.end()
 
-    a, mk = _hangul_body_to_ascii_masked(line[cursor:])
+    a, mk = _hangul_body_to_ascii_masked(line[cursor:], unknown=unknown)
     ascii_parts.append(a)
     mask.extend(mk)
     return "".join(ascii_parts), mask
@@ -513,7 +555,11 @@ def _hangul_body_to_ascii(text: str) -> str:
     return ascii_text
 
 
-def _hangul_body_to_ascii_masked(text: str) -> tuple[str, list[bool]]:
+def _hangul_body_to_ascii_masked(
+    text: str,
+    *,
+    unknown: list[str] | None = None,
+) -> tuple[str, list[bool]]:
     out: list[str] = []
     mask: list[bool] = []
     # 직전 한글 음절이 받침 없음 → 이어지는 「예」에 붙임줄 필요
@@ -601,23 +647,31 @@ def _hangul_body_to_ascii_masked(text: str) -> tuple[str, list[bool]]:
             body = JAMO_COMPAT_TO_ASCII.get(jamo)
             if body:
                 emit("7" + body + "7")
+            else:
+                emit(UNKNOWN_PRINT_ASCII)
+                if unknown is not None:
+                    unknown.append(ch)
             prev_open_syl = False
             i += 1
             continue
 
         if ch in _CIRCLED_HANGUL_SYLLABLE:
             syl = _CIRCLED_HANGUL_SYLLABLE[ch]
-            body, _ = _hangul_body_to_ascii_masked(syl)
+            body, _ = _hangul_body_to_ascii_masked(syl, unknown=unknown)
             if body:
                 emit("7" + body + "7")
+            else:
+                emit(UNKNOWN_PRINT_ASCII)
+                if unknown is not None:
+                    unknown.append(ch)
             prev_open_syl = False
             i += 1
             continue
 
-        if ch.isdigit():
+        if _is_ascii_digit(ch):
             digit_start = i
             digits: list[str] = []
-            while i < n and text[i].isdigit():
+            while i < n and _is_ascii_digit(text[i]):
                 digits.append(_DIGIT_TO_ASCII[text[i]])
                 i += 1
             emit(NUMBER_SIGN + "".join(digits))
@@ -810,11 +864,26 @@ def _hangul_body_to_ascii_masked(text: str) -> tuple[str, list[bool]]:
             continue
 
         if 0x3131 <= ord(ch) <= 0x318E:
-            emit("=?")
+            emit(UNKNOWN_PRINT_ASCII)
             prev_open_syl = False
             i += 1
             continue
 
+        if ch in "\n\r":
+            emit(ch)
+            prev_open_syl = False
+            i += 1
+            continue
+
+        if ch.isspace():
+            emit(" ")
+            prev_open_syl = False
+            i += 1
+            continue
+
+        emit(UNKNOWN_PRINT_ASCII)
+        if unknown is not None:
+            unknown.append(ch)
         prev_open_syl = False
         i += 1
 
@@ -825,7 +894,10 @@ class TableBrailleTranslator:
     """korean_tables 기반 정방향 점역."""
 
     def translate_text(self, text: str) -> BrailleSequence:
-        ascii_text, roman_mask = hangul_text_to_ascii_with_roman_mask(text)
+        unknown: list[str] = []
+        ascii_text, roman_mask = hangul_text_to_ascii_with_roman_mask(
+            text, unknown_chars=unknown
+        )
         flat_ascii = ascii_text.replace("\r\n", "\n").replace("\r", "\n")
         if "\r" in ascii_text:
             # mask는 flat 과 길이가 같도록 유지 (위 replace가 길이를 바꾸지 않음)
@@ -842,14 +914,17 @@ class TableBrailleTranslator:
                 metadata={"ascii": flat_ascii, "roman_mask": roman_mask},
             )
         ]
+        meta: dict = {
+            "translator": "TableBrailleTranslator",
+            "ascii": flat_ascii,
+            "roman_mask": roman_mask,
+        }
+        if unknown:
+            meta["unknown_chars"] = unknown
         return BrailleSequence(
             source_node_id="",
             tokens=tokens,
-            metadata={
-                "translator": "TableBrailleTranslator",
-                "ascii": flat_ascii,
-                "roman_mask": roman_mask,
-            },
+            metadata=meta,
         )
 
     def translate_node(self, node: ExamNode) -> BrailleSequence:
@@ -921,13 +996,22 @@ class TableBrailleTranslator:
                 },
             )
         ascii_lines: list[str] = []
+        unknown: list[str] = []
         for align, ink in parts:
-            raw = hangul_text_to_ascii(ink)
+            raw = hangul_text_to_ascii(ink, unknown_chars=unknown)
             ascii_lines.append(pad_header_ascii(align, raw))
         flat = "\n".join(ascii_lines)
         cell_list: list[int] = []
         for line in flat.split("\n"):
             cell_list.extend(_ascii_to_cells(line))
+        meta: dict = {
+            "translator": "TableBrailleTranslator",
+            "ascii": flat,
+            "node_type": "Header",
+            "preformatted": True,
+        }
+        if unknown:
+            meta["unknown_chars"] = unknown
         return BrailleSequence(
             source_node_id=node.id,
             tokens=[
@@ -939,12 +1023,7 @@ class TableBrailleTranslator:
                     metadata={"ascii": flat},
                 )
             ],
-            metadata={
-                "translator": "TableBrailleTranslator",
-                "ascii": flat,
-                "node_type": "Header",
-                "preformatted": True,
-            },
+            metadata=meta,
         )
 
     def translate_document(self, exam: ExamDocument) -> list[BrailleSequence]:

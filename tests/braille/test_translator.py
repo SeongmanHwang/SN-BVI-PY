@@ -310,3 +310,35 @@ def test_hyangchal_inline_braille():
 
 def test_box_rule_ink_to_table_rule():
     assert hangul_text_to_ascii("────────────────") == "!" + "3" * 20 + "4"
+
+
+def test_unknown_print_emits_placeholder_and_records():
+    """표에 없는 기호는 삭제하지 않고 =? 로 남기며 기록한다."""
+    from korean_exam_braille.app.braille.translator import UNKNOWN_PRINT_ASCII
+
+    unknown: list[str] = []
+    ga = hangul_text_to_ascii("가")
+    na = hangul_text_to_ascii("나")
+    out = hangul_text_to_ascii("가★나", unknown_chars=unknown)
+    assert out == ga + UNKNOWN_PRINT_ASCII + na
+    assert unknown == ["★"]
+
+    unknown.clear()
+    assert hangul_text_to_ascii("⑥", unknown_chars=unknown) == UNKNOWN_PRINT_ASCII
+    assert unknown == ["⑥"]
+
+
+def test_nbsp_becomes_space_not_unknown():
+    unknown: list[str] = []
+    assert hangul_text_to_ascii("가\u00a0나", unknown_chars=unknown) == hangul_text_to_ascii(
+        "가 나"
+    )
+    assert unknown == []
+
+
+def test_translate_text_metadata_unknown_chars():
+    seq = TableBrailleTranslator().translate_text("본문 ♪ 끝")
+    assert seq.metadata.get("unknown_chars") == ["♪"]
+    from korean_exam_braille.app.braille.translator import UNKNOWN_PRINT_ASCII
+
+    assert UNKNOWN_PRINT_ASCII in (seq.metadata.get("ascii") or "")

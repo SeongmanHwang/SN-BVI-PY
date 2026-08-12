@@ -8,7 +8,10 @@ from typing import Any
 
 from korean_exam_braille.app.braille.ports import BrailleTranslator
 from korean_exam_braille.app.braille.stub import StubBrailleTranslator
-from korean_exam_braille.app.braille.translator import TableBrailleTranslator
+from korean_exam_braille.app.braille.translator import (
+    TableBrailleTranslator,
+    format_unknown_print_warning,
+)
 from korean_exam_braille.app.exam.builder import RuleExamStructureBuilder
 from korean_exam_braille.app.exam.ports import ExamStructureBuilder, ExamStructureValidator
 from korean_exam_braille.app.exam.stub import (
@@ -86,6 +89,11 @@ class ConversionPipeline:
         exam = self.exam_builder.build(pdf)
         warnings = list(self.exam_validator.validate(exam))
         sequences = self.translator.translate_document(exam)
+        unknown_print: list[str] = []
+        for seq in sequences:
+            unknown_print.extend(seq.metadata.get("unknown_chars") or [])
+        if unknown_print:
+            warnings.append(format_unknown_print_warning(unknown_print))
         braille_document = self.layout_engine.layout(
             sequences, profile=self.layout_profile
         )

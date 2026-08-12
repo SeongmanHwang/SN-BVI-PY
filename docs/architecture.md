@@ -91,7 +91,8 @@ PDF 파일
 2. 후보 태그 우선순위로 PassageGroup / Question / Choice / ExampleBox 등 부착.
 3. `[N~M]`·문항 번호로 메타데이터 채움, 지문↔문항 `ExamRelation` 생성.
 4. **`apply_genre_paragraph_splits`**: 들여쓰기로 장르(시·대화문·소설·비문학) 판정,
-   장르별 Passage 문단 재분할, Passage에 `indent_genre` 전파 (시는 개행·재분할 보존).
+   장르별 Passage 문단 재분할, Passage에 `indent_genre` 전파 (시는 장르 재분할 없음).
+   줄 전체 `(가)`/`(나)`는 모든 장르에서 표지 문단으로 가르고 `section_label`을 붙인다.
 
 `RuleExamStructureValidator`: 문항 수·선택지 개수 등 전역 경고.  
 장르·개행 관례: [extraction_and_translation.md](extraction_and_translation.md) §3.8.

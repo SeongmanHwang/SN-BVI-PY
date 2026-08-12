@@ -375,6 +375,9 @@ class ConversionWorkspace:
             brackets = bracket_labels(node.metadata)
             if brackets:
                 label = f"{label} · 구간 {', '.join(brackets)}"
+            section = node.metadata.get("section_label")
+            if isinstance(section, str) and section.strip():
+                label = f"{label} · {section.strip()}"
 
             indent_debug: dict[str, object] | None = None
             if node.node_type == "PassageGroup" and line_x0:

@@ -2,6 +2,7 @@
 
 from korean_exam_braille.app.exam.genre_paragraph_split import (
     count_indented_double_quote_lines,
+    line_section_label,
     line_starts_with_double_quote,
     resplit_passage_run,
 )
@@ -287,3 +288,93 @@ def test_novel_mixed_columns_does_not_leave_giant_right_blob():
     assert max(sizes) <= 4
     assert any("우2시작" in (p.source_range.raw_text or "") for p in out)
     assert any("우3시작" in (p.source_range.raw_text or "") for p in out)
+
+
+def test_section_label_detection():
+    assert line_section_label("(가)") == "(가)"
+    assert line_section_label("  (나)  ") == "(나)"
+    assert line_section_label("（가）") == "(가)"
+    assert line_section_label("(가)와 관련하여") is None
+    assert line_section_label("(나)에서 답을 확인할 수 없는 것은?") is None
+    assert line_section_label("(다)") is None
+
+
+def _one_block_run(lines: dict[str, PdfLine]) -> tuple[list[ExamNode], dict[str, list[str]]]:
+    ids = list(lines)
+    block_line_ids = {"b1": ids}
+    passages = [
+        ExamNode(
+            id="p0",
+            node_type="Passage",
+            source_range=SourceRange(block_ids=["b1"], raw_text="x", page_number=1),
+        )
+    ]
+    return passages, block_line_ids
+
+
+def test_gana_label_is_own_paragraph_nonfiction():
+    lines = {
+        "l0": _line("l0", "(가)", 100.0),
+        "l1": _line("l1", "가본문이어짐", 100.0),
+        "l2": _line("l2", "(나)", 100.0),
+        "l3": _line("l3", "나본문이어짐", 100.0),
+    }
+    passages, block_line_ids = _one_block_run(lines)
+    out = resplit_passage_run(
+        passages,
+        genre=CFG.label_nonfiction,
+        lines_by_id=lines,
+        block_line_ids=block_line_ids,
+        config=CFG,
+        id_prefix="g",
+    )
+    texts = [(p.source_range.raw_text or "").strip() for p in out]
+    assert texts[0] == "(가)"
+    assert out[0].metadata.get("section_label") == "(가)"
+    assert "가본문이어짐" in texts[1]
+    assert out[1].metadata.get("section_label") is None
+    assert texts[2] == "(나)"
+    assert out[2].metadata.get("section_label") == "(나)"
+    assert "나본문이어짐" in texts[3]
+
+
+def test_gana_prompt_not_split():
+    lines = {
+        "l0": _line("l0", "(가)와 관련하여", 100.0),
+        "l1": _line("l1", "발문 본문", 100.0),
+    }
+    passages, block_line_ids = _one_block_run(lines)
+    out = resplit_passage_run(
+        passages,
+        genre=CFG.label_nonfiction,
+        lines_by_id=lines,
+        block_line_ids=block_line_ids,
+        config=CFG,
+        id_prefix="g",
+    )
+    assert len(out) == 1
+    assert out[0].metadata.get("section_label") is None
+
+
+def test_gana_splits_poetry_too():
+    """시는 장르 문단 나눔이 없어도 (가)/(나) 표지는 가른다."""
+    lines = {
+        "l0": _line("l0", "(가)", 100.0),
+        "l1": _line("l1", "첫 시행", 100.0),
+        "l2": _line("l2", "둘째 시행", 100.0),
+    }
+    passages, block_line_ids = _one_block_run(lines)
+    out = resplit_passage_run(
+        passages,
+        genre=CFG.label_si,
+        lines_by_id=lines,
+        block_line_ids=block_line_ids,
+        config=CFG,
+        id_prefix="g",
+    )
+    assert len(out) == 2
+    assert (out[0].source_range.raw_text or "").strip() == "(가)"
+    assert out[0].metadata.get("section_label") == "(가)"
+    assert "첫 시행" in (out[1].source_range.raw_text or "")
+    assert "둘째 시행" in (out[1].source_range.raw_text or "")
+

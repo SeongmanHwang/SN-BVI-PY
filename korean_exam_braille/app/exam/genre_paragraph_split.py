@@ -1,9 +1,10 @@
 """장르별 Passage 문단 나눔 (Exam 트리 후처리).
 
-시: 나눔 없음 (자연 블록 유지)
+시: 장르 문단 나눔 없음 (자연 블록 유지). ``(가)``/``(나)`` 표지 줄은 예외.
 비문학: 들여쓰기(R) 시작 줄에서 새 문단
 대화문: 내어쓰기(직전보다 왼쪽) 또는 연속 L에서 새 문단
 소설: 들여쓰기면 문단 시작 — 따옴표면 이어진 R까지, 아니면 이어진 L까지
+지문 표지: 줄 전체가 ``(가)`` 또는 ``(나)``이면 단독 문단 + ``section_label``
 """
 
 from __future__ import annotations
@@ -28,6 +29,8 @@ from korean_exam_braille.app.pdf.models import PdfDocumentStructure, PdfLine
 
 # 쌍따옴표만 (ASCII / 굽은 따옴표)
 DOUBLE_QUOTE_START = re.compile(r'^["\u201c\u201d]')
+# 지문 구간 표지 — 줄 전체가 (가) 또는 (나)일 때만 (발문「(가)와 관련하여」제외)
+_SECTION_LABEL = re.compile(r"^\s*[\(（](가|나)[\)）]\s*$")
 
 
 @dataclass
@@ -40,6 +43,27 @@ def line_starts_with_double_quote(text: str | None) -> bool:
     """첫 글자(선행 공백 제거 후)가 쌍따옴표인지."""
     t = (text or "").lstrip()
     return bool(t and DOUBLE_QUOTE_START.match(t))
+
+
+def line_section_label(text: str | None) -> str | None:
+    """줄 전체가 지문 표지 ``(가)``/``(나)``이면 그 표지, 아니면 None."""
+    m = _SECTION_LABEL.match(text or "")
+    if not m:
+        return None
+    return f"({m.group(1)})"
+
+
+def _gana_split_starts(texts: list[str]) -> list[int]:
+    """표지 줄은 단독 문단, 바로 다음 줄은 본문 문단 시작."""
+    starts: list[int] = []
+    n = len(texts)
+    for i, t in enumerate(texts):
+        if line_section_label(t) is None:
+            continue
+        starts.append(i)
+        if i + 1 < n:
+            starts.append(i + 1)
+    return starts
 
 
 def _index_lines(pdf: PdfDocumentStructure) -> dict[str, PdfLine]:
@@ -214,6 +238,10 @@ def _passage_node_from_lines(
         tags.append(f"bracket-end:{','.join(ends)}")
     if tags:
         meta["candidate_tags"] = tags
+    if rows:
+        section = line_section_label(rows[0].line.text)
+        if section:
+            meta["section_label"] = section
     return ExamNode(
         id=node_id,
         node_type="Passage",
@@ -264,39 +292,52 @@ def resplit_passage_run(
     bracket_starts: dict[str, str] | None = None,
     bracket_ends: dict[str, str] | None = None,
 ) -> list[ExamNode]:
-    """연속 Passage 노드들을 장르 규칙으로 재분할. 시만 원본 유지."""
-    if genre == config.label_si or not passages:
+    """연속 Passage 노드들을 장르 규칙으로 재분할.
+
+    시(indent)는 장르 문단 나눔 없음. 다만 단독 ``(가)``/``(나)`` 줄은
+    모든 장르에서 표지 문단 + 본문 문단으로 가른다.
+    """
+    if not passages:
+        return []
+
+    rows = _collect_passage_lines(
+        passages, lines_by_id=lines_by_id, block_line_ids=block_line_ids
+    )
+    if not rows:
         for p in passages:
             if p.node_type == "Passage":
                 p.metadata["indent_genre"] = genre
         return list(passages)
 
-    rows = _collect_passage_lines(
-        passages, lines_by_id=lines_by_id, block_line_ids=block_line_ids
-    )
-    if len(rows) < 2:
-        return list(passages)
-
-    # 단별 상대 x0 — 좌·우 혼입 시 오른쪽이 전부 R로 잡히지 않게
-    x0s = column_relative_x0s_from_lines(
-        [r.line for r in rows],
-        column_cut_x=column_cut_x,
-    )
     texts = [r.line.text or "" for r in rows]
-    if genre == config.label_nonfiction:
-        segs = _segments_from_starts(
-            len(rows), _split_starts_nonfiction(x0s, config=config)
-        )
-    elif genre == config.label_dialogue:
-        segs = _segments_from_starts(
-            len(rows), _split_starts_dialogue(x0s, config=config)
-        )
-    elif genre == config.label_novel:
-        segs = _segments_novel(x0s, texts, config=config)
-    else:
-        return list(passages)
+    gana_starts = _gana_split_starts(texts)
 
+    genre_starts: list[int] = [0]
+    if len(rows) >= 2 and genre != config.label_si:
+        x0s = column_relative_x0s_from_lines(
+            [r.line for r in rows],
+            column_cut_x=column_cut_x,
+        )
+        if genre == config.label_nonfiction:
+            genre_starts = _split_starts_nonfiction(x0s, config=config)
+        elif genre == config.label_dialogue:
+            genre_starts = _split_starts_dialogue(x0s, config=config)
+        elif genre == config.label_novel:
+            segs = _segments_novel(x0s, texts, config=config)
+            genre_starts = [a for a, _ in segs] or [0]
+        else:
+            genre_starts = [0]
+
+    segs = _segments_from_starts(len(rows), genre_starts + gana_starts)
     if len(segs) <= 1:
+        for p in passages:
+            if p.node_type == "Passage":
+                p.metadata["indent_genre"] = genre
+                if not p.metadata.get("section_label"):
+                    first = (p.source_range.raw_text or "").split("\n", 1)[0]
+                    lab = line_section_label(first)
+                    if lab:
+                        p.metadata["section_label"] = lab
         return list(passages)
 
     out: list[ExamNode] = []
