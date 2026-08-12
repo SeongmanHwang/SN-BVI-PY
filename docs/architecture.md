@@ -70,16 +70,17 @@ PDF 파일
 
 ### 4.1 PDF (`pdf/`)
 
-1. **추출** (`extractor`): PyMuPDF `rawdict`로 문자 스팬(좌표·텍스트·`char_bboxes`) 수집.
-2. **벡터 표·래스터 그림·밑줄·꺾쇠** (`tables`, `figures`, `emphasis`, `bracket_groups`):
-   도면·이미지·짧은 가로선·여백 `[A]` 기하를 페이지 구조에 반영.
-3. **행** (`line_builder`): 열·y 근접으로 줄을 묶고 `<u>…</u>` 직렬화.
-4. **그래픽 선형화** (`graphic_linearize`): 원문자 전용 행 병합, 표/그림/박스 표선 승격.
-5. **중략 줄거리** (`plot_summary`): 글꼴 런 끝에 `[줄거리 끝]` 삽입.
-6. **레이아웃 프로필** (`layout_profile`): 머리/꼬리 밴드·2단 `column_cut_x`.
-7. **블록·읽기 순서·후보 태그** (`block_builder`, `reading_order`, `candidates`).
+문서 단위로 `infer_layout_profile`(머리/꼬리·2단)을 잡은 뒤, 페이지마다:
 
-상세 순서·표는 [local_translation_rules.md](local_translation_rules.md) §B.  
+1. **span** (`extract_page_spans`) — rawdict + opaque→`/` · `char_bboxes`
+2. **표·그림·밑줄·꺾쇠** (`tables`, `figures`, `emphasis`, `bracket_groups`)
+3. **줄** (`line_builder`) — 열·`y_mid` 클러스터 + `<u>`
+4. **병렬 선택지** (`parallel_choice`) — ①×㉠/㉡ 고신뢰만 재조합
+5. **중략 줄거리** (`plot_summary`) → `[줄거리 끝]`; 노트형 그림 필터
+6. **그래픽 선형화** (`graphic_linearize`) — 원문자 병합·표/그림/`─` 표선
+7. **※ 앞 줄바꿈** · 블록 · **측면 마커** · reading order · 후보 태그
+
+상세 순서·함정: [extraction_and_translation.md](extraction_and_translation.md).  
 진단 UI는 **읽기 전용**이다. **제품 목표는 이 단계 자동 정확도를 올려 UI 수정을 불필요하게 하는 것**이다.
 
 ### 4.2 Exam (`exam/`)
@@ -93,15 +94,15 @@ PDF 파일
    장르별 Passage 문단 재분할, Passage에 `indent_genre` 전파 (시는 개행·재분할 보존).
 
 `RuleExamStructureValidator`: 문항 수·선택지 개수 등 전역 경고.  
-장르·개행 관례: [local_translation_rules.md](local_translation_rules.md) §A-8 · §C.
+장르·개행 관례: [extraction_and_translation.md](extraction_and_translation.md) §3.8.
 
 ### 4.3 점역 (`braille/`)
 
 `TableBrailleTranslator`:
 
 1. Exam 노드 텍스트 → (한자 음독/병기 접기) → 한글 음절·약자·시험 토큰 → ASCII 셀.
-2. 로컬 셀 충돌·로마자·원문자 등은 [local_translation_rules.md](local_translation_rules.md) §A.
-3. Passage/Choice/Question은 하드 개행을 공백으로 합침. **시**(`indent_genre`)만 시행 유지.
+2. 처리 순서·셀 충돌·로마·원문자·`예` 붙임줄·수표 수식 등은 [extraction_and_translation.md](extraction_and_translation.md) §2–3.
+3. Passage/Choice/Question은 하드 개행을 공백으로 합침. **시**(`indent_genre`)와 **※ 앞 `\n99`** 만 하드 개행 유지.
 4. 출력: `BrailleSequence` (node_type · indent_genre · keep_hard_newlines 등).
 
 역점역: [reverse_translation.md](reverse_translation.md). **최종 정합 척도는 ASCII 셀 비교**.
@@ -111,7 +112,7 @@ PDF 파일
 `RuleBrailleLayoutEngine` + `LayoutProfile` (기본 32셀×26줄):
 
 1. 노드 타입별 들여쓰기.
-2. 산문 등: 남은 `\n`도 평탄 후 soft wrap. **시**: 하드 개행 유지·행별 wrap.
+2. 산문 등: 남은 `\n`도 평탄 후 soft wrap. **시**·남은 `※`(99) 하드 개행: 행별 wrap.
 3. 로마자 구간 줄바꿈 시 `0` 재삽입 (`roman_mask`).
 4. 면 분할·구분선·머리말 패딩 (`header_format`).
 
